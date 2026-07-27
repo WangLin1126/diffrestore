@@ -38,15 +38,20 @@ Place under `checkpoint/` (git-ignored):
 
 ## 3. Train a prior
 
-**IHDM prior on FFHQ-256** (faithful residual loss; the main target):
+**IHDM prior on FFHQ-256** (faithful residual loss; the main target). The default config is the
+**ORIGINAL 211M** net (`num_res_blocks=3, dropout=0.3`, `img_size_256_full`), sized for **80 GB GPUs**:
 ```bash
-python scripts/train_ihdm.py --steps 200000 --batch 24 --gpus 0 1 2 3 \
+# 80 GB GPUs — original 211M net. Rough capacity ~14-16 images per 80 GB GPU (fp32, DataParallel):
+#   set --batch = per_gpu * num_gpus.  batch 32 matches the original lr=2e-5.
+python scripts/train_ihdm.py --config img_size_256_full --steps 200000 \
+    --batch 32 --gpus 0 1 2 3 --out checkpoint/ihdm/ffhq256_full.pth
+#   examples:  1x80GB -> --batch 16   |   4x80GB -> --batch 64   |   8x80GB -> --batch 128
+#   for batch > 32, scale lr ~linearly, e.g.  --lr 4e-5  for batch 64.
+
+# <=24 GB GPUs — compact 160M net (num_res_blocks=2)
+python scripts/train_ihdm.py --config img_size_256_train --batch 24 --gpus 0 1 2 3 \
     --out checkpoint/ihdm/ffhq256_train.pth
-# config: model/ihdm_backbone/configs/ffhq/img_size_256_train.py
-#   compact net (num_res_blocks=2, dropout=0.1) → 160M params, fits 24 GB at batch 24 (~10 img/s).
-#   For the ORIGINAL 211M net (num_res_blocks=3, dropout=0.3): make a config with model.use_checkpoint=True
-#   (gradient checkpointing) and relaunch — fits 24 GB, ~20-30% slower.
-# checkpoints every 5k -> checkpoint/ihdm/ffhq256_train.pth ; previews every 10k -> results/ihdm256_train/
+# checkpoints every 5k ; sample previews every 10k -> results/ihdm256_train/
 ```
 **Cold-diffusion prior** (our x0-predictor; CelebA-128 or FFHQ-256):
 ```bash
@@ -62,13 +67,13 @@ python scripts/make_shared_obs.py --source celebahq --out results/eval --n 16 \
     --image_size 256 --blur_sigma 4 --noise 0.05
 
 # IHDM prior + full-MAP (HQS) solver
-python scripts/restore.py --prior ihdm --ihdm_config img_size_256_train \
-    --ckpt checkpoint/ihdm/ffhq256_train.pth --solver hqs --image_size 256 \
+python scripts/restore.py --prior ihdm --ihdm_config img_size_256_full \
+    --ckpt checkpoint/ihdm/ffhq256_full.pth --solver hqs --image_size 256 \
     --clean_dir results/eval/clean --observation_dir results/eval/observation --out results/eval/ihdm_hqs
 
 # IHDM prior + 1-step SMDC gradient
-python scripts/restore.py --prior ihdm --ihdm_config img_size_256_train \
-    --ckpt checkpoint/ihdm/ffhq256_train.pth --solver smdc --image_size 256 \
+python scripts/restore.py --prior ihdm --ihdm_config img_size_256_full \
+    --ckpt checkpoint/ihdm/ffhq256_full.pth --solver smdc --image_size 256 \
     --clean_dir results/eval/clean --observation_dir results/eval/observation --out results/eval/ihdm_smdc
 
 # cold-diffusion prior + SMDC

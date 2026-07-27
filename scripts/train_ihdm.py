@@ -16,11 +16,11 @@ BACKBONE = os.path.join(REPO, "model", "ihdm_backbone")
 sys.path.insert(0, REPO)
 sys.path.insert(0, BACKBONE)
 
+import importlib
 import numpy as np
 import torch
 from torchvision.utils import save_image
 
-from configs.ffhq import img_size_256_train
 from model_code import utils as mutils
 from model_code.ema import ExponentialMovingAverage
 from utils.seed import set_seed
@@ -29,8 +29,11 @@ from utils.seed import set_seed
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_pt", default="data/ffhq256/ffhq256_uint8.pt")
+    ap.add_argument("--config", default="img_size_256_full",
+                    help="configs/ffhq/*: img_size_256_full (211M, for 80GB) | img_size_256_train (160M, <=24GB)")
     ap.add_argument("--steps", type=int, default=200000)
-    ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--batch", type=int, default=32, help="total (DataParallel splits); ~14-16 per 80GB GPU")
+    ap.add_argument("--lr", type=float, default=None, help="override lr (default from config; scale ~linearly with batch)")
     ap.add_argument("--gpus", type=int, nargs="+", default=[0, 1, 2, 3])
     ap.add_argument("--log_every", type=int, default=100)
     ap.add_argument("--ckpt_every", type=int, default=5000)
@@ -45,9 +48,11 @@ def main():
     os.makedirs("results/ihdm256_train", exist_ok=True)
     primary = f"cuda:{args.gpus[0]}"
 
-    config = img_size_256_train.get_config()
+    config = importlib.import_module(f"configs.ffhq.{args.config}").get_config()
     config.device = torch.device(primary)
     config.training.batch_size = args.batch
+    if args.lr is not None:
+        config.optim.lr = args.lr
     K = config.model.K
 
     model = mutils.create_model(config, device_ids=args.gpus)     # NCSN++ (DataParallel)
@@ -58,7 +63,8 @@ def main():
     heat = mutils.create_forward_process(config, config.device)   # DCTBlur
     model_fn = mutils.get_model_fn(model, train=True)
     n_params = sum(p.numel() for p in net.parameters()) / 1e6
-    print(f"  IHDM-256: {n_params:.1f}M params | K={K} | gpus={args.gpus} | batch={args.batch}", flush=True)
+    print(f"  IHDM-256 [{args.config}]: {n_params:.1f}M params | K={K} | gpus={args.gpus} | "
+          f"batch={args.batch} | lr={config.optim.lr:.1e}", flush=True)
 
     data = torch.load(args.data_pt, map_location="cpu", mmap=True)   # (N,3,256,256) uint8, [0,255]
     N = data.shape[0]
