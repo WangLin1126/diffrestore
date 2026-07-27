@@ -1,0 +1,17 @@
+conditioning:
+  method: ps
+  params:
+    scale: 0.3
+
+data:
+  name: ffhq
+  root: ./data/celeba_256_three_resized/
+
+measurement:
+  operator:
+    name: heat_blur
+    intensity: 4.0
+
+  noise:
+    name: gaussian
+    sigma: 0.2

@@ -1,0 +1,22 @@
+# Large data, model weights, and generated outputs — obtain/produce per docs/REPRODUCE.md
+/data/
+/checkpoint/
+/results/
+
+# Vendored third-party sample assets / weights (keep the code, drop the binaries)
+/model/dps_backbone/data/
+/model/dps_backbone/figures/
+/model/dps_backbone/models/
+
+# Python caches / binaries / logs
+__pycache__/
+*.py[cod]
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.npz
+*.log
+**/hf_cache/
+.ipynb_checkpoints/
+.DS_Store

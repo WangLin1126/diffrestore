@@ -1,0 +1,23 @@
+# Core
+torch>=2.1
+torchvision>=0.16
+numpy>=1.24
+scipy>=1.10
+Pillow>=9.0
+einops>=0.6
+tqdm>=4.64
+PyYAML>=6.0
+
+# IHDM backbone config system
+ml_collections>=0.1.1
+
+# Data (HuggingFace parquet/zip datasets)
+huggingface_hub>=0.20
+pyarrow>=14.0
+
+# Metrics & figures
+lpips>=0.1.4
+matplotlib>=3.6
+
+# DPS baseline backbone (model/dps_backbone, guided-diffusion)
+blobfile>=2.0
