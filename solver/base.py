@@ -1,10 +1,10 @@
-"""Scale-matched data-consistency solver: prior-first operator splitting (MATH.md eq. 18).
+"""Scale-matched data-consistency solver — per-step MAP (HQS).
 
     for (t, t') in consecutive decreasing levels:
-        x~  = R_theta(x, t, t')                       # learned reverse-degradation step
-        y'  = L_t' y                                  # scale-matched measurement
-        x~ += eta * A^T W_t'(y' - A x~)   (xN)        # data-consistency correction(s)
-        x   = clamp(x~).detach()                      # no autograd through the prior
+        x~  = R_theta(x, t, t')            # learned reverse-degradation step
+        y'  = L_t' y                       # scale-matched measurement
+        x~  = MAP(x~, y', t')              # closed-form per-step MAP data-consistency step
+        x   = clamp(x~).detach()           # no autograd through the prior
 """
 from __future__ import annotations
 from typing import Sequence, Optional
@@ -13,7 +13,6 @@ import torch
 from ops.operators import LinearOperator
 from ops.heat import HeatSchedule
 from model.base import ReversePrior
-from solver.weighting import Weighting
 from utils.logging import RunLogger, StepLog
 
 
@@ -24,15 +23,12 @@ def scale_matched_solver(
     A: LinearOperator,
     schedule: HeatSchedule,
     prior: ReversePrior,
-    weighting: Weighting,
-    step_fn,
-    inner_steps: int = 1,
+    map_correction,
     clamp: Optional[tuple] = (-1.0, 1.0),
     logger: Optional[RunLogger] = None,
     rng=None,
     x0_ref: Optional[torch.Tensor] = None,
     scale_match: bool = True,
-    map_correction=None,
 ) -> torch.Tensor:
     if len(times) < 2:
         raise ValueError("need >= 2 levels")
@@ -49,17 +45,8 @@ def scale_matched_solver(
 
             # scale_match=False is the ablation: compare A x_t against the *untransformed* y
             y_next = schedule.apply_L(y, t_next) if scale_match else y
-            x_corr = x_prior
-            if map_correction is not None:                       # IHDM-HQS MAP solve
-                x_corr = map_correction.apply(x_prior, y_next, t_next)
-                r = y_next - A.forward(x_corr)
-            else:                                                # SMDC gradient correction
-                r = y_next - A.forward(x_corr)
-                for _ in range(inner_steps):
-                    r = y_next - A.forward(x_corr)
-                    grad = A.adjoint(weighting.apply(r, t_next))
-                    eta = step_fn(t_next, x_corr, grad)
-                    x_corr = x_corr + eta * grad
+            x_corr = map_correction.apply(x_prior, y_next, t_next)     # closed-form per-step MAP
+            r = y_next - A.forward(x_corr)
             corr_norm = (x_corr - x_prior).norm().item()
             if clamp is not None:
                 x_corr = x_corr.clamp(clamp[0], clamp[1])

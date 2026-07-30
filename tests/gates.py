@@ -11,12 +11,6 @@ import torch
 from ops.transforms import DCTTransform
 from ops.heat import HeatSchedule
 from ops.deblur import build_deblur
-from solver.weighting import Weighting
-from solver.step import make_step_fn
-from solver.init import terminal_init
-from model.identity import OracleReblurPrior
-from solver.base import scale_matched_solver
-from utils.logging import RunLogger
 
 
 @dataclass
@@ -65,28 +59,6 @@ def gate_limits(H=32, W=32, dtype=torch.float64) -> GateResult:
     return GateResult("limits K_0=L_0=I", worst, 1e-9, worst < 1e-9)
 
 
-def gate_gradient(H=16, W=16, dtype=torch.float64) -> GateResult:
-    """Analytic ascent A^T W r must equal -grad of D = 0.5 <r, W r>. Both modes."""
-    tf, sch, A, gA = _setup(H, W, dtype)
-    i = sch.num_levels // 2
-    g = torch.Generator().manual_seed(2)
-    y_t = torch.randn(1, 3, H, W, generator=g, dtype=dtype)
-    worst = 0.0
-    for mode in ("surrogate_l2", "regularized"):
-        w = Weighting(sch, mode, sigma_n=0.05, A_transfer=gA, regularizer=1e-2)
-        x = torch.randn(1, 3, H, W, generator=g, dtype=dtype, requires_grad=True)
-        r = y_t - A.forward(x)
-        wr = w.apply(r, i)
-        D = 0.5 * (r * wr).sum()
-        (grad_ad,) = torch.autograd.grad(D, x)
-        with torch.no_grad():
-            r2 = y_t - A.forward(x)
-            ascent = A.adjoint(w.apply(r2, i))          # A^T W r
-        rel = (ascent - (-grad_ad)).norm().item() / max(1.0, grad_ad.norm().item())
-        worst = max(worst, rel)
-    return GateResult("gradient analytic=autograd", worst, 1e-8, worst < 1e-8)
-
-
 def gate_noise_cov(H=8, W=8, dtype=torch.float64) -> GateResult:
     """Empirical per-frequency power of n_t=L_t n vs sigma_n^2 |g_t|^2 (MATH.md eq. 8)."""
     tf, sch, A, _ = _setup(H, W, dtype)
@@ -103,26 +75,8 @@ def gate_noise_cov(H=8, W=8, dtype=torch.float64) -> GateResult:
     return GateResult("noise cov Cov(L_t n)", rel, 0.05, rel < 0.05)
 
 
-def gate_solver_plumbing(H=32, W=32, dtype=torch.float64) -> GateResult:
-    """With a perfect oracle prior the reconstruction must equal the reference image."""
-    tf, sch, A, gA = _setup(H, W, dtype)
-    g = torch.Generator().manual_seed(4)
-    x0 = 0.5 * torch.randn(1, 3, H, W, generator=g, dtype=dtype).clamp(-1, 1)
-    y = A.forward(x0)  # noiseless: perfect prior + zero residual must recover x0 exactly
-    times = list(range(sch.num_levels - 1, -1, -1))
-    prior = OracleReblurPrior(x0, sch)
-    w = Weighting(sch, "regularized", sigma_n=0.02, A_transfer=gA, regularizer=1e-3)
-    step_fn = make_step_fn("residual_normalized", base=0.2)
-    x_init = terminal_init("matched_measurement", y, sch, times[0])
-    x_hat = scale_matched_solver(y, x_init, times, A, sch, prior, w, step_fn,
-                                 inner_steps=1, clamp=(-1, 1))
-    rel = (x_hat - x0).norm().item() / x0.norm().item()
-    return GateResult("solver plumbing (oracle)", rel, 1e-2, rel < 1e-2)
-
-
 ALL_GATES = [
-    gate_adjoint, gate_intertwining, gate_limits,
-    gate_gradient, gate_noise_cov, gate_solver_plumbing,
+    gate_adjoint, gate_intertwining, gate_limits, gate_noise_cov,
 ]
 
 

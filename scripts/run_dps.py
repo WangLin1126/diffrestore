@@ -52,6 +52,20 @@ class HeatBlurOperator:
         return self.forward(data, **kwargs)
 
 
+class MotionBlurOperatorDPS:
+    """Levin motion blur for DPS (circular conv via OTF); general, non-DCT operator."""
+    def __init__(self, kernel_npy, image_size, device):
+        from ops.motion import MotionBlurOperator
+        k = torch.from_numpy(np.load(kernel_npy))
+        self.A = MotionBlurOperator(k, (image_size, image_size), device=device, dtype=torch.float32)
+
+    def forward(self, data, **kwargs):
+        return self.A.forward(data)
+
+    def transpose(self, data, **kwargs):
+        return self.A.adjoint(data)
+
+
 class GaussianNoiser:
     __name__ = "gaussian"
 
@@ -77,6 +91,8 @@ def main():
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--num_images", type=int, default=8)
     ap.add_argument("--degradation_sigma", type=float, default=4.0)
+    ap.add_argument("--operator", choices=["heat", "motion"], default="heat")
+    ap.add_argument("--kernel_npy", default="results/motion/kernel.npy")
     ap.add_argument("--scale", type=float, default=0.3)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -87,7 +103,9 @@ def main():
     mc["model_path"] = str(DPS_ROOT / "models" / "ffhq_10m.pt")   # symlink -> checkpoint/dps
     image_size = int(mc["image_size"])
     model = create_model(**mc).to(device).eval()
-    cond = get_conditioning_method("ps", HeatBlurOperator(args.degradation_sigma), GaussianNoiser(), scale=args.scale)
+    operator = (MotionBlurOperatorDPS(args.kernel_npy, image_size, device) if args.operator == "motion"
+                else HeatBlurOperator(args.degradation_sigma))
+    cond = get_conditioning_method("ps", operator, GaussianNoiser(), scale=args.scale)
     sampler = create_sampler(**yaml.safe_load(open(args.diffusion_config)))
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=cond.conditioning)
 

@@ -1,17 +1,15 @@
-"""Unified restoration entrypoint:  prior  x  solver.
+"""Unified Gaussian-deblur restoration entrypoint:  prior  x  HQS (per-step MAP) solver.
 
   prior  : cold_diffusion (our x0-predictor) | ihdm (heat, vendored)
-  solver : smdc (1-step scale-matched gradient) | hqs (full per-step MAP)
+  solver : hqs (closed-form per-step MAP data consistency; the scale-matched data step)
 
 Deblurs external observations (clean_dir + observation_dir, same DCT-heat A both were made with).
-
-  # SMDC-gradient with our cold-diffusion FFHQ-256 prior
-  python scripts/restore.py --prior cold_diffusion --ckpt checkpoint/cold_diffusion/ffhq256.pth \
-     --image_size 256 --ch 128 --ch_mult 1 1 2 2 4 --num_res_blocks 2 \
-     --clean_dir results/.../clean --observation_dir results/.../observation --solver smdc
+For motion blur under realistic reflect boundaries, use scripts/restore_motion_cg.py (spatial CG).
 
   # IHDM prior + HQS (full MAP) solver
-  python scripts/restore.py --prior ihdm --solver hqs --clean_dir ... --observation_dir ...
+  python scripts/restore.py --prior ihdm --solver hqs --ihdm_config img_size_256_full \
+     --ckpt checkpoint/ihdm/ihdm_ffhq256_full.pth --image_size 256 \
+     --clean_dir results/.../clean --observation_dir results/.../observation
 """
 import os
 import sys
@@ -31,8 +29,6 @@ from ops.deblur import build_deblur
 from model.cold_diffusion import ColdDiffusionPrior
 from model.unet import UNet
 from model.ihdm import load_ihdm
-from solver.weighting import Weighting
-from solver.step import make_step_fn
 from solver.init import terminal_init
 from solver.hqs import MAPCorrection
 from solver.base import scale_matched_solver
@@ -76,7 +72,7 @@ def build_prior(args, tf, device):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prior", choices=["cold_diffusion", "ihdm"], required=True)
-    ap.add_argument("--solver", choices=["smdc", "hqs"], default="smdc")
+    ap.add_argument("--solver", choices=["hqs"], default="hqs")
     ap.add_argument("--ckpt", default=None)
     ap.add_argument("--clean_dir", required=True)
     ap.add_argument("--observation_dir", required=True)
@@ -96,12 +92,6 @@ def main():
     ap.add_argument("--sigma_min", type=float, default=0.5)
     ap.add_argument("--sigma_max", type=float, default=128.0)
     ap.add_argument("--ihdm_config", default="img_size_128_maxblur128")
-    # SMDC solver knobs
-    ap.add_argument("--mode", choices=["surrogate_l2", "regularized", "exact"], default="surrogate_l2")
-    ap.add_argument("--base_step", type=float, default=0.1)
-    ap.add_argument("--step_kind", default="residual_normalized")
-    ap.add_argument("--inner_steps", type=int, default=1)
-    ap.add_argument("--regularizer", type=float, default=1e-3)
     # HQS solver knobs
     ap.add_argument("--delta", type=float, default=0.01)
     ap.add_argument("--sigma_y", type=float, default=0.05)
@@ -117,14 +107,10 @@ def main():
 
     prior, sch, H = build_prior(args, tf, device)
     A, gA = build_deblur(H, H, args.blur_sigma, transform=tf, device=device, dtype=torch.float32)
-    weighting = Weighting(sch, args.mode, sigma_n=args.noise_std, A_transfer=gA, regularizer=args.regularizer)
-    step_fn = make_step_fn(args.step_kind, base=args.base_step, a2_max=float(gA.max() ** 2))
     times = list(range(sch.num_levels - 1, -1, -1))
-    corrector = None
-    if args.solver == "hqs":
-        corrector = MAPCorrection(sch, gA, delta=args.delta, sigma_y=args.sigma_y,
-                                  prior_weight=args.prior_weight, data_weight=args.data_weight,
-                                  schedule_kind=args.map_schedule)
+    corrector = MAPCorrection(sch, gA, delta=args.delta, sigma_y=args.sigma_y,
+                              prior_weight=args.prior_weight, data_weight=args.data_weight,
+                              schedule_kind=args.map_schedule)
     print(f"  prior={args.prior} solver={args.solver} res={H} K={sch.num_levels-1}")
 
     x0 = load_png_stack(args.clean_dir, H, args.n).to(device)
@@ -133,9 +119,8 @@ def main():
     for k in range(x0.shape[0]):
         xi, y = x0[k:k + 1], ys[k:k + 1]
         x_init = terminal_init("matched_measurement", y, sch, times[0])
-        x_hat = scale_matched_solver(y, x_init, times, A, sch, prior, weighting, step_fn,
-                                     inner_steps=args.inner_steps, clamp=(-1, 1),
-                                     logger=RunLogger(verbose=False), x0_ref=xi, map_correction=corrector)
+        x_hat = scale_matched_solver(y, x_init, times, A, sch, prior, corrector,
+                                     clamp=(-1, 1), logger=RunLogger(verbose=False), x0_ref=xi)
         save_image((x_hat[0].clamp(-1, 1) + 1) / 2, os.path.join(args.out, "recon", f"{k:05d}.png"))
         S["in"].append(psnr(y, xi)); S["out"].append(psnr(x_hat, xi)); S["ssim"].append(ssim(x_hat, xi))
         S["lpips"].append(lpips_metric(x_hat, xi, device)); S["mc"].append(measurement_consistency(y, A, x_hat))

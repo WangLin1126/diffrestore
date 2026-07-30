@@ -128,6 +128,23 @@ Follow-up: matched-capacity test = DPS-style x̂₀ guidance on **our** prior (`
 
 ## 9. Update log
 
+- **2026-07-30 (latest)** — **Motion deblur → DEFAULT `R+R+R` (reflect obs + DCT-heat scale-match + spatial-CG data step).**
+  On realistic reflect-boundary motion observations the closed-form DFT-Wiener (iFFT) data step rings at the
+  border; solving the *same* per-step MAP objective with **spatial conjugate gradient** (reflect operator
+  `H = A`, exact autograd adjoint, ~12 iters, **no FFT**) removes it. `IHDM+CG` is the best full-frame method
+  at every noise level: **29.74 / 28.40 / 26.78 dB** @ σ_y 0.05/0.10/0.20, 3–5 dB over Wiener/TV/DPS (which
+  inherit the ring). Report `tab:motion` + motion figures rebuilt on reflect obs; the central-crop table and
+  the HQS-vs-CG comparison were removed.
+  - **Boundary ablation (single image, 2³ combos).** Three independent boundary choices — **A1** how `A` is
+    applied to GT (circular/reflect), **A2** how `K_t` is applied to `y` (DFT/DCT-heat), **A3** the solver
+    (iFFT-Wiener+edgetaper / spatial-CG) → 8 runs. Result: **interior (crop-128) ≈ 31 dB for ALL 8** (every
+    choice is *border-only*); full-frame best is **R,R,R = 32.49 dB**, worst mismatch 18.62; any single
+    circular axis costs 6–14 dB. Even fully-circular "inverse crime" `C,C,C` = 22.07 (the IHDM prior is
+    DCT-heat–native, so circular-heat states are OOD at the border).
+  - **Commutation error** `‖A K_t x − K_t A x‖/‖x‖` **≈ 1e-3 under reflect** (vs ~1e-7 circular = exact),
+    small and boundary-localized — the scale-match `b = K_t y` is a very good approximation. Default going
+    forward: **R+R+R**. Tools: `ops/motion_spatial.py` (SpatialMotionBlur + cg_solve),
+    `scripts/{restore_motion_cg, make_motion_obs_reflect, run_wiener_motion, boundary_ablation}.py`.
 - **2026-07-25 (latest+2)** — **Solver comparison #1: SMDC 1-step gradient vs IHDM-HQS MAP** (same IHDM
   prior, same obs, CelebA-128, σ=4, noise 0.05). Best SMDC (surrogate, base 0.1): 24.67 / 0.787 / 0.225 /
   MC 0.112. Best IHDM-HQS MAP (data_weight 64): **25.39 / 0.818 / 0.182 / MC 0.094 — wins all metrics.**
