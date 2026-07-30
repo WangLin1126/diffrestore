@@ -73,7 +73,7 @@ def main():
     start = 0
     if args.resume and os.path.exists(args.resume):
         ck = torch.load(args.resume, map_location=primary, weights_only=False)
-        net.load_state_dict(ck["model"]); ema.load_state_dict(ck["ema"]); opt.load_state_dict(ck["opt"])
+        model.load_state_dict(ck["model"]); ema.load_state_dict(ck["ema"]); opt.load_state_dict(ck["opt"])
         start = ck["step"]; print(f"  resumed @ {start}", flush=True)
 
     model.train()

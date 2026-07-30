@@ -20,3 +20,5 @@ __pycache__/
 **/hf_cache/
 .ipynb_checkpoints/
 .DS_Store
+.sii/
+hf_token.txt
