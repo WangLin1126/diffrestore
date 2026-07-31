@@ -6,8 +6,8 @@ each named recon directory, then prints a comparison table. Every method — SMD
 cold-diffusion, DPS — is scored identically from its output PNGs, so the numbers are
 directly comparable regardless of solver paradigm.
 
-  python scripts/compare_table.py --clean results/four_way/clean --obs results/four_way/observation \
-    --blur_sigma 4 --recon "cold+SMDC"=results/four_way/cold_smdc/recon ...
+  python scripts/compare_table.py --clean results/gaussian/clean --obs results/gaussian/observation \
+    --blur_sigma 4 --recon "cold+SMDC"=results/gaussian/cold_smdc/recon ...
 """
 import os
 import sys

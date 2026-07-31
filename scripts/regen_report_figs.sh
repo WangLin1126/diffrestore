@@ -22,9 +22,9 @@ gauss () {  # $1 dir  $2 outname  $3 title
     --recon "DPS"=results/$1/dps/heat_blur/recon \
     --title "$3" --out results/$1/$2
 }
-gauss four_way        figure_gaussian.png "Gaussian deblur (sigma=4, noise=0.05) - held-out CelebA-HQ 256"
-gauss four_way_n0p10  figure.png          "Gaussian deblur (sigma=4, noise=0.10) - held-out CelebA-HQ 256"
-gauss four_way_n0p20  figure.png          "Gaussian deblur (sigma=4, noise=0.20) - held-out CelebA-HQ 256"
+gauss gaussian        figure_gaussian.png "Gaussian deblur (sigma=4, noise=0.05) - held-out CelebA-HQ 256"
+gauss gaussian_n0p10  figure.png          "Gaussian deblur (sigma=4, noise=0.10) - held-out CelebA-HQ 256"
+gauss gaussian_n0p20  figure.png          "Gaussian deblur (sigma=4, noise=0.20) - held-out CelebA-HQ 256"
 
 # ---- Motion (DFT) full frame, higher-noise levels : Clean|Obs|HQS+TV|cold+HQS|IHDM+HQS|DPS ----
 motionfull () {
@@ -67,4 +67,4 @@ $MF --clean results/motion/clean --obs results/motion/observation \
   --out results/motion/figure_dct_vs_dft.png
 
 echo "=== figures regenerated ==="
-ls -la results/four_way/figure_gaussian.png results/motion/figure_dct_vs_dft.png results/motion/figure_crop128.png
+ls -la results/gaussian/figure_gaussian.png results/motion/figure_dct_vs_dft.png results/motion/figure_crop128.png

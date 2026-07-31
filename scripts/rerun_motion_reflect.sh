@@ -28,9 +28,6 @@ run_noise () {  # $1 dir  $2 sigma_y  $3 gpu-offset
     --clean_dir "$CL" --observation_dir "$OB" --num_images 16 --scale 0.3 --gpu 0 \
     --save_dir results/$D/dps > results/rerun_logs/${TAG}_dps.log 2>&1 &
   wait
-  # Wiener (fast, gpu0)
-  CUDA_VISIBLE_DEVICES=0 python scripts/run_wiener_motion.py --clean "$CL" --observation_dir "$OB" \
-    --kernel_npy "$K" --n 16 --device cuda:0 --out results/$D/wiener > results/rerun_logs/${TAG}_wiener.log 2>&1
   echo "=== done $D (sigma_y=$SY) ==="
 }
 
@@ -39,4 +36,4 @@ run_noise motion_reflect_n0p10  0.10
 run_noise motion_reflect_n0p20  0.20
 
 echo "=========== ALL RESULT LINES ==========="
-grep -h "motion-CG\|TV+HQS motion\|wiener motion\|DPS" results/rerun_logs/motion_reflect*_*.log 2>/dev/null | grep -i "psnr"
+grep -h "motion-CG\|TV+HQS motion\|DPS" results/rerun_logs/motion_reflect*_*.log 2>/dev/null | grep -i "psnr"

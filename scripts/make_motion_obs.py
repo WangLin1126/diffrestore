@@ -3,7 +3,7 @@
 Applies Levin09 kernel #1 (circular conv) + Gaussian noise, so the ONLY difference vs the
 Gaussian experiment is the degradation operator -> directly comparable.
 
-  python scripts/make_motion_obs.py --clean results/four_way/clean --out results/motion --noise 0.05
+  python scripts/make_motion_obs.py --clean results/gaussian/clean --out results/motion --noise 0.05
 """
 import os
 import sys
@@ -34,7 +34,7 @@ def save_png(path, x):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clean", default="results/four_way/clean")
+    ap.add_argument("--clean", default="results/gaussian/clean")
     ap.add_argument("--out", default="results/motion")
     ap.add_argument("--kernel", type=int, default=1)
     ap.add_argument("--noise", type=float, default=0.05)

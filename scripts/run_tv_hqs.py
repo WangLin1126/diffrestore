@@ -37,7 +37,7 @@ def load(d, H, n=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--operator", choices=["gaussian", "motion"], required=True)
+    ap.add_argument("--operator", choices=["gaussian", "motion", "disk"], required=True)
     ap.add_argument("--clean_dir", required=True)
     ap.add_argument("--observation_dir", required=True)
     ap.add_argument("--blur_sigma", type=float, default=4.0)
@@ -57,9 +57,17 @@ def main():
     sig2 = args.sigma_y ** 2
     os.makedirs(os.path.join(args.out, "recon"), exist_ok=True)
 
-    if args.operator == "gaussian":
+    if args.operator in ("gaussian", "disk"):
         tf = DCTTransform()
-        A, g = build_deblur(H, H, args.blur_sigma, transform=tf, device="cpu", dtype=torch.float32)
+        if args.operator == "gaussian":
+            A, g = build_deblur(H, H, args.blur_sigma, transform=tf, device="cpu", dtype=torch.float32)
+        else:  # disk: symmetric kernel is DCT-diagonal; transfer via all-ones-DCT probe
+            from ops.motion_spatial import SpatialMotionBlur
+            from ops.spectral import SpectralOperator
+            kk = torch.from_numpy(np.load(args.kernel_npy))
+            A_sp = SpatialMotionBlur(kk, 3, "cpu", torch.float32)
+            g = tf.fwd(A_sp.forward(tf.inv(torch.ones(1, 3, H, H))))[0, 0]
+            A = SpectralOperator(g, tf)
         fwd, inv = tf.fwd, tf.inv
         num_a = lambda Y: g * Y                       # conj(g)=g (real)
         den_a = g * g

@@ -27,15 +27,9 @@ An HQS Framework for Linear Image Restoration}}
 \maketitle
 
 \begin{abstract}
-We present an image-restoration method that couples a \emph{non-hot} diffusion prior
-with a per-step \emph{Half-Quadratic Splitting} data-consistency
-solver. The forward blur operator of the prior, $\K_t$, and the measurement operator $\A$
-are simultaneously diagonalized in a fixed orthogonal transform $\Phimat$ (DCT for
-Neumann/symmetric blur, DFT for periodic/asymmetric blur); this makes $\A\K_t=\K_t\A$ and
-turns each HQS data step into a closed-form, per-frequency Wiener filter with \emph{no}
-backpropagation through the network. We give the problem statement, the concrete HQS
-derivation and update, the algorithm, and numerical results on held-out CelebA-HQ-256 for
-Gaussian and motion deblurring, benchmarked against Diffusion Posterior Sampling (DPS).
+We present an image-restoration method that couples a \emph{non-hot} diffusion prior. The forward blur operator of the prior, $\K_t$, and the measurement operator $\A$
+are simultaneously diagonalized in a fixed orthogonal transform $\Phimat$. We give the problem statement, the algorithm, and numerical results on held-out CelebA-HQ-256 for
+Gaussian, motion, and defocus deblurring, benchmarked against Diffusion Posterior Sampling.
 \end{abstract}
 
 \section{Problem definition}
@@ -51,7 +45,7 @@ where $\A$ is a known linear degradation and
 $\sigma_y$ the noise level. The task is to recover $\x_0$ from $\y$.
 
 \paragraph{Non-hot diffusion prior.}
-A non-hot diffusion prior (cold diffusion / IHDM) defines a
+A non-hot diffusion prior defines a
 \emph{deterministic} forward corruption by progressive blurring,
 \begin{equation}
 \x_t \;=\; \K_t\,\x_0,\qquad t=0,1,\dots,N,\qquad \K_0=\I,
@@ -102,11 +96,8 @@ $\delta^2$ around $\bmu_{t-1}$ and the Gaussian likelihood~\eqref{eq:model},
 \underbrace{\frac{1}{2\sigma_y^2}\,\|\A\x-\y_{t-1}\|^2}_{\text{data consistency}} .
 \label{eq:map}
 \end{equation}
-This is exactly the HQS subproblem obtained by variable-splitting the MAP objective
-$\min_\x \tfrac{1}{2\sigma_y^2}\|\A\x-\y\|^2 + \mathcal{R}(\x)$ and replacing the prior
-proximal operator by the learned diffusion reverse step. Substituting a \emph{classical}
-denoiser for that prox---e.g.\ a total-variation (Chambolle) step---recovers standard
-plug-and-play HQS; we report this as the \textbf{HQS$+$TV} baseline in Sec.~\ref{sec:results}.
+Substituting a \emph{classical} denoiser for that prox---e.g.\ a total-variation (Chambolle) step---recovers standard
+plug-and-play HQS; we report this as the \textbf{TV} baseline in Sec.~\ref{sec:results}.
 
 \paragraph{Scale-matched measurement.}
 Rather than driving every level with the raw $\y$, we \emph{scale-match} the measurement
@@ -144,24 +135,32 @@ w_y(t)=\frac{\alpha_y}{\sigma_y^{2}}\Bigl(1-\tfrac{t-1}{N}\Bigr),
 \label{eq:weights}
 \end{equation}
 where $\overline{(\cdot)}$ is complex conjugation. The scalars $\alpha_p,\alpha_y>0$ are
-dimensionless weights on the prior and data terms (\emph{not} the Laplacian eigenvalues
-$\lambda_j$ of Eq.~\eqref{eq:diag}); only their ratio $\alpha_p/\alpha_y$ shapes the filter,
-$\delta$ is the prior-proximal standard deviation, and $\sigma_y$ the noise level
-(see the parameter sheet, Table~\ref{tab:params}).
+dimensionless weights on the prior and data terms; only their ratio $\alpha_p/\alpha_y$ shapes the filter,
+$\delta$ is the prior-proximal standard deviation, and $\sigma_y$ the noise level.
 Equation~\eqref{eq:wiener} is a per-frequency Wiener filter:
-at frequencies with $|\hat a[j]|\!\approx\!0$ (e.g.\ spectral nulls of a motion kernel)
+at frequencies with $|\hat a[j]|\!\approx\!0$
 the estimate falls back to the prior $\hat{\bmu}[j]$, while at well-conditioned
 frequencies it follows the data. The linear ramp in~\eqref{eq:weights} realizes the
-``late'' schedule (data pull strongest near $t=0$). No gradient is taken through
+``late'' schedule. No gradient is taken through
 $R_\theta$; the network is used only as the prior-proximal map producing $\bmu_{t-1}$.
 
-\paragraph{Basis selection.}
-For Gaussian/heat $\A$, $\Phimat=$ DCT and $\hat a$ is real. For motion $\A$, a DCT prior
-does \emph{not} commute with $\A$ (complex phase cannot live in a real cosine basis); we
-therefore evaluate the entire pipeline in the DFT basis, using the periodic heat symbol
-$\hat k_t[j]=\exp(-\tfrac12\sigma_t^2\lvert\omega_j\rvert^2)$ with
-$\omega_j=2\pi\,\mathrm{fftfreq}$, which restores $\A\K_t=\K_t\A$ and hence the exact
-scale-match~\eqref{eq:scalematch} and closed form~\eqref{eq:wiener}.
+\paragraph{Basis selection and the boundary question.}
+For Gaussian/heat $\A$, $\Phimat=$ DCT and $\hat a$ is real, so $\A$ shares the prior's
+Neumann eigenbasis and the closed form~\eqref{eq:wiener} is exact. For motion (and other
+kernels not diagonalized by the DCT) one \emph{could} move the whole pipeline to the DFT basis
+with the periodic heat symbol
+$\hat k_t[j]=\exp(-\tfrac12\sigma_t^2\lvert\omega_j\rvert^2)$, $\omega_j=2\pi\,\mathrm{fftfreq}$,
+which formally restores $\A\K_t=\K_t\A$ and the diagonal closed form~\eqref{eq:wiener}. In
+practice this is the wrong trade: it imposes \emph{periodic} boundaries on non-periodic images,
+so the inverse-DFT data step rings at the border (Sec.~\ref{sec:results}). We therefore do
+\emph{not} train a separate DFT-basis prior. Instead we keep the single DCT/Neumann prior and,
+whenever $\A$ is not DCT-diagonal, solve the data step in the \emph{spatial} domain by conjugate
+gradient with the true reflect-boundary operator $\mathbf H$ (Eq.~\ref{eq:cg}). CG uses only
+$\mathbf H\!\cdot$ and $\mathbf H^{\!\top}\!\cdot$ and never diagonalizes $\A$, so it needs
+\emph{no} shared eigenbasis between $\A$ and the prior: basis-matching is unnecessary. The
+scale-match~\eqref{eq:scalematch} then only requires $\A\K_t\approx\K_t\A$, which is exact for
+Gaussian in the DCT basis and holds to $\sim\!10^{-3}$ for reflect-boundary motion---and the
+reflect/Neumann convention is also the physically correct one for natural-image boundaries.
 
 \paragraph{Parameter settings.}
 Table~\ref{tab:params} is the full parameter sheet. Only the ratio $\alpha_p/\alpha_y$
@@ -234,10 +233,7 @@ $\mathrm{MC}=\|\y-\A\hat\x\|/\|\y\|\;\downarrow$.
 \paragraph{Gaussian / heat deblur.}
 With $\A$ a DCT-diagonal Gaussian blur, $\A$ and the heat prior
 share the DCT basis, so~\eqref{eq:wiener} is exact. The non-hot HQS prior wins distortion
-by a wide margin (Table~\ref{tab:gauss}); DPS wins perceptual LPIPS. Both non-hot priors
-also exceed a best-$\lambda$ classical Wiener filter; Wiener's
-deconvolution ringing gives it the worst LPIPS. Its
-$\lambda$ is chosen by oracle test-set PSNR, i.e.\ Wiener's strongest setting.
+by a wide margin (Table~\ref{tab:gauss}); DPS wins perceptual LPIPS.
 
 \begin{table}[h]
 \centering
@@ -248,26 +244,23 @@ $\sigma_y$. Bold = best PSNR and best LPIPS per noise block.}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{6}{*}{0.05}
+\multirow{5}{*}{0.05}
  & Observation & 22.85 & 0.529 & 0.565 & 0.122 \\
- & Wiener      & 25.44 & 0.698 & 0.585 & 0.094 \\
- & HQS + TV    & 26.04 & 0.742 & 0.364 & 0.093 \\
+ & TV          &26.04 & 0.742 & 0.364 & 0.093 \\
  & cold + HQS  & 25.80 & 0.692 & 0.442 & 0.092 \\
  & IHDM + HQS  & \textbf{27.13} & \textbf{0.778} & 0.360 & 0.093 \\
  & DPS         & 23.84 & 0.678 & \textbf{0.175} & 0.102 \\
 \midrule
-\multirow{6}{*}{0.10}
+\multirow{5}{*}{0.10}
  & Observation & 21.48 & 0.352 & 0.719 & 0.198 \\
- & Wiener      & 24.63 & 0.671 & 0.645 & 0.185 \\
- & HQS + TV    & 25.23 & 0.714 & 0.408 & 0.183 \\
+ & TV          &25.23 & 0.714 & 0.408 & 0.183 \\
  & cold + HQS  & 25.11 & 0.683 & 0.460 & 0.181 \\
  & IHDM + HQS  & \textbf{26.47} & \textbf{0.756} & 0.380 & 0.182 \\
  & DPS         & 23.28 & 0.658 & \textbf{0.186} & 0.191 \\
 \midrule
-\multirow{6}{*}{0.20}
+\multirow{5}{*}{0.20}
  & Observation & 18.53 & 0.188 & 0.927 & 0.349 \\
- & Wiener      & 23.41 & 0.613 & 0.747 & 0.344 \\
- & HQS + TV    & 23.44 & 0.662 & 0.481 & 0.348 \\
+ & TV          &23.44 & 0.662 & 0.481 & 0.348 \\
  & cold + HQS  & 23.99 & 0.664 & 0.474 & 0.341 \\
  & IHDM + HQS  & \textbf{25.41} & \textbf{0.724} & 0.396 & 0.342 \\
  & DPS         & 22.57 & 0.632 & \textbf{0.201} & 0.351 \\
@@ -275,10 +268,10 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \end{tabular}
 \end{table}
 
-\paragraph{Motion deblur (realistic reflect boundaries, spatial CG).}
+\paragraph{Motion deblur.}
 A Levin09 kernel~\#1 is \emph{asymmetric}, so it is not diagonalized by the DCT; and on a finite
-image with a realistic \textbf{reflect (symmetric) boundary}---the standard blur-synthesis
-convention (reflect-pad by half the kernel $\to$ convolve $\to$ crop)---the blur operator is block
+image with a realistic \textbf{reflect boundary}---the standard blur-synthesis
+convention---the blur operator is block
 Toeplitz-plus-Hankel, \emph{not} circulant, so no single transform diagonalizes it. A closed-form
 \emph{frequency-domain} data step (the Wiener update~\eqref{eq:wiener}) would apply an inverse DFT
 over the whole image and thereby re-impose periodic boundaries, producing border ringing on
@@ -289,51 +282,40 @@ $\mathbf H$ the reflect-boundary convolution matrix, each step solves the normal
 \big(w_p\I + w_y\,\mathbf H^{\!\top}\mathbf H\big)\,\x \;=\; w_p\bmu + w_y\,\mathbf H^{\!\top}(\K_{t-1}\y)
 \label{eq:cg}
 \end{equation}
-by CG ($\sim\!12$ iterations, matrix-free: each iteration is one $\mathbf H$ and one
-$\mathbf H^{\!\top}$ spatial convolution; the adjoint $\mathbf H^{\!\top}$ is taken exactly by
-autograd, verified $\langle\mathbf H\x,\mathbf r\rangle=\langle\x,\mathbf H^{\!\top}\mathbf r\rangle$
-to $10^{-15}$). No iFFT over the image is formed, so there is no periodic wrap and no ringing, and
+by CG. No iFFT over the image is formed, so there is no periodic wrap and no ringing, and
 the cost is negligible next to the network evaluation. Table~\ref{tab:motion} reports every method
-on identical reflect-boundary observations: the learned priors with the spatial-CG data step
-(cold$+$CG, IHDM$+$CG) recover the full frame cleanly, whereas the frequency-domain baselines
-(oracle Wiener, HQS$+$TV) and DPS inherit the boundary ring on realistic data. IHDM$+$CG is the
-best full-frame method at every noise level ($29.74/28.40/26.78$\,dB PSNR), $3$--$5$\,dB above every
-baseline: the circulant Wiener and HQS$+$TV data steps ring on the non-periodic data (HQS$+$TV reaches
-only $22.66/24.82/24.54$\,dB) and DPS trails on distortion ($24.90/24.49/23.74$\,dB), though DPS wins
-perceptual LPIPS at the two higher noise levels. The weak cold prior stays weak ($\approx\!22$\,dB),
-as it was under HQS.
+on identical reflect-boundary observations. To isolate the prior, the TV baseline uses the
+\emph{same} spatial-CG data step as the learned priors so IHDM$+$CG, cold$+$CG and TV all recover
+the full frame without ringing; only DPS, whose guidance uses a circular forward, inherits the boundary ring.
 
 \begin{table}[h]
 \centering
 \caption{Motion deblur (Levin09~\#1) on realistic \textbf{reflect-boundary} observations, full
-frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. Learned priors use the
-spatial-CG data step (Eq.~\ref{eq:cg}); Wiener, HQS$+$TV and DPS are frequency-domain / circulant
-baselines that inherit the boundary ring. Bold = best PSNR and best LPIPS per noise block.}
+frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. IHDM, cold and TV all use
+the spatial-CG data step (Eq.~\ref{eq:cg}); DPS is a circulant baseline that inherits the
+boundary ring. Bold = best PSNR and best LPIPS per noise block.}
 \label{tab:motion}
 \begin{tabular}{llcccc}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{6}{*}{0.05}
+\multirow{5}{*}{0.05}
  & Observation & 24.25 & 0.581 & 0.358 & 0.117 \\
- & Wiener      & 23.83 & 0.581 & 0.332 & 0.125 \\
- & HQS + TV    & 22.66 & 0.738 & 0.225 & 0.126 \\
+ & TV          & 28.34 & 0.800 & 0.154 & 0.086 \\
  & cold + CG   & 22.66 & 0.440 & 0.491 & 0.061 \\
  & IHDM + CG   & \textbf{29.74} & 0.808 & \textbf{0.119} & 0.081 \\
  & DPS         & 24.90 & 0.718 & 0.168 & 0.122 \\
 \midrule
-\multirow{6}{*}{0.10}
+\multirow{5}{*}{0.10}
  & Observation & 22.49 & 0.396 & 0.536 & 0.193 \\
- & Wiener      & 22.07 & 0.432 & 0.499 & 0.194 \\
- & HQS + TV    & 24.82 & 0.726 & 0.258 & 0.191 \\
+ & TV          & 26.64 & 0.751 & 0.238 & 0.175 \\
  & cold + CG   & 22.05 & 0.399 & 0.542 & 0.142 \\
  & IHDM + CG   & \textbf{28.40} & 0.795 & 0.246 & 0.172 \\
  & DPS         & 24.49 & 0.701 & \textbf{0.173} & 0.198 \\
 \midrule
-\multirow{6}{*}{0.20}
+\multirow{5}{*}{0.20}
  & Observation & 19.07 & 0.219 & 0.790 & 0.342 \\
- & Wiener      & 19.79 & 0.333 & 0.681 & 0.352 \\
- & HQS + TV    & 24.54 & 0.692 & 0.333 & 0.338 \\
+ & TV          & 25.02 & 0.703 & 0.328 & 0.334 \\
  & cold + CG   & 22.10 & 0.419 & 0.503 & 0.302 \\
  & IHDM + CG   & \textbf{26.78} & 0.761 & 0.327 & 0.330 \\
  & DPS         & 23.74 & 0.673 & \textbf{0.184} & 0.347 \\
@@ -343,7 +325,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{../results/four_way/figure_gaussian.png}
+\includegraphics[width=\linewidth]{../results/gaussian/figure_gaussian.png}
 \caption{Gaussian deblur, held-out CelebA-HQ-256 (per-column mean PSNR/SSIM/LPIPS in the
 headers). With $\A$ and the heat prior sharing the DCT basis, the non-hot HQS priors (cold,
 IHDM) win distortion; DPS wins perceptual LPIPS.}
@@ -352,53 +334,117 @@ IHDM) win distortion; DPS wins perceptual LPIPS.}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{../results/motion/figure_dct_vs_dft.png}
+\includegraphics[width=\linewidth]{../results/motion_reflect/figure_motion.png}
 \caption{Motion deblur (Levin09~\#1) at $\sigma_y=0.05$ on realistic \textbf{reflect-boundary}
-observations, full frame: HQS$+$TV, cold$+$CG and IHDM$+$CG plus DPS. The frequency-domain
-baselines (oracle Wiener, HQS$+$TV) and DPS show the periodic \emph{banding} of a circulant
-data step on non-periodic data, whereas the spatial-CG learned prior (IHDM$+$CG) reconstructs
-the full frame cleanly---no iFFT, no wrap (Table~\ref{tab:motion}).}
+observations, full frame: TV, cold$+$CG, IHDM$+$CG and DPS. TV, cold$+$CG and IHDM$+$CG share the
+spatial-CG data step and reconstruct the full frame cleanly---no iFFT, no wrap---whereas DPS, whose
+guidance uses a circular forward, shows the periodic \emph{banding} of a circulant data step on
+non-periodic data. Among the ring-free methods the learned IHDM prior is sharpest
+(Table~\ref{tab:motion}).}
 \label{fig:dft}
 \end{figure}
 
+\paragraph{Defocus deblur.}
+Out-of-focus blur is convolution with a uniform \textbf{disk} (pillbox) point-spread function; we
+use radius $7$ ($15\times15$) and the same realistic reflect-boundary synthesis as motion. Unlike
+the motion kernel, a disk is \emph{symmetric} in both axes, and a both-axes-symmetric kernel under
+reflect boundaries is exactly diagonalized by the DCT-II---the very basis the Neumann heat prior
+uses. We confirm this by extracting the disk's DCT transfer $\hat a$ with a single probe
+($\hat a=\mathrm{DCT}(\A\,\mathrm{IDCT}(\mathbf 1))$) and checking
+$\lVert\A\x-\mathrm{IDCT}(\hat a\odot\mathrm{DCT}\,\x)\rVert/\lVert\A\x\rVert\approx9\times10^{-6}$;
+correspondingly the intertwining $\A\K_t=\K_t\A$ holds to $\sim\!10^{-15}$ (vs $\sim\!10^{-3}$ for
+the asymmetric motion kernel). Defocus therefore needs \emph{no} spatial CG: it uses the same
+closed-form per-frequency DCT-Wiener data step~\eqref{eq:wiener} as Gaussian---exact and
+iteration-free. This is the general rule: \textbf{symmetric operators} (Gaussian, defocus; also
+symmetric anti-alias filters) admit the closed-form DCT-HQS step, whereas \textbf{asymmetric
+operators} (motion) require spatial CG. Table~\ref{tab:defocus} reports the full comparison across
+noise. IHDM$+$HQS is the best full-frame method at every level ($22.80\!\to\!27.81$\,dB at
+$\sigma_y=0.05$, $+5.0$\,dB), beating the TV prior by $1.7$\,dB and DPS by $4.6$\,dB on distortion;
+DPS again wins perceptual LPIPS. The closed-form solve matches the spatial-CG result to
+$0.01$\,dB, as it must.
+
+\begin{table}[h]
+\centering
+\caption{Defocus deblur (disk PSF, radius $7$ / $15\times15$) on realistic \textbf{reflect-boundary}
+observations, full frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. The disk
+is DCT-diagonal, so IHDM, cold and TV all use the closed-form DCT-HQS data step~\eqref{eq:wiener}
+(no CG); DPS is a circulant baseline. Bold = best PSNR and best LPIPS per noise block.}
+\label{tab:defocus}
+\begin{tabular}{llcccc}
+\toprule
+$\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
+\midrule
+\multirow{5}{*}{0.05}
+ & Observation & 22.80 & 0.520 & 0.551 & 0.117 \\
+ & TV          & 26.16 & 0.743 & 0.325 & 0.093 \\
+ & cold + HQS  & 24.10 & 0.510 & 0.490 & 0.089 \\
+ & IHDM + HQS  & \textbf{27.81} & 0.794 & 0.313 & 0.092 \\
+ & DPS         & 23.23 & 0.659 & \textbf{0.186} & 0.117 \\
+\midrule
+\multirow{5}{*}{0.10}
+ & Observation & 21.45 & 0.346 & 0.706 & 0.195 \\
+ & TV          & 25.16 & 0.711 & 0.390 & 0.182 \\
+ & cold + HQS  & 24.50 & 0.578 & 0.447 & 0.178 \\
+ & IHDM + HQS  & \textbf{26.64} & 0.759 & 0.371 & 0.181 \\
+ & DPS         & 22.98 & 0.650 & \textbf{0.191} & 0.197 \\
+\midrule
+\multirow{5}{*}{0.20}
+ & Observation & 18.53 & 0.185 & 0.916 & 0.347 \\
+ & TV          & 23.91 & 0.672 & 0.449 & 0.343 \\
+ & cold + HQS  & 24.00 & 0.631 & 0.427 & 0.337 \\
+ & IHDM + HQS  & \textbf{25.49} & 0.725 & 0.394 & 0.340 \\
+ & DPS         & 22.46 & 0.630 & \textbf{0.203} & 0.351 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \paragraph{Noise robustness.}
 We repeat the full comparison at higher noise, $\sigma_y\in\{0.10,0.20\}$
-(Tables~\ref{tab:gauss},~\ref{tab:motion}, Figs.~\ref{fig:gauss_noise},~\ref{fig:motion_noise_full};
-TV and Wiener re-tuned per noise). The rankings are stable. On Gaussian, IHDM$+$HQS keeps the best
+(Tables~\ref{tab:gauss},~\ref{tab:motion},~\ref{tab:defocus};
+Figs.~\ref{fig:gauss_noise},~\ref{fig:motion_noise_full},~\ref{fig:defocus_noise};
+TV re-tuned per noise). The rankings are stable. On Gaussian, IHDM$+$HQS keeps the best
 PSNR/SSIM at every level ($27.13\!\to\!26.47\!\to\!25.41$\,dB) and DPS the best LPIPS. On motion
 (reflect boundaries), IHDM$+$CG is the best full-frame method at every noise level, while DPS
-increasingly wins LPIPS as noise grows. All methods lose $\sim\!2$--$4$\,dB from $\sigma_y{=}0.05$
-to $0.20$, but the ordering is preserved --- the structural conclusions are not artifacts of a
-single noise level.
+increasingly wins LPIPS as noise grows. Defocus mirrors Gaussian (same closed-form DCT-HQS): IHDM
+leads at every level ($27.81\!\to\!26.64\!\to\!25.49$\,dB), DPS wins LPIPS. All methods lose
+$\sim\!2$--$4$\,dB from $\sigma_y{=}0.05$ to $0.20$, but the ordering is preserved --- the
+structural conclusions are not artifacts of a single noise level.
 
-\begin{figure}[htbp]\centering
-\includegraphics[width=\linewidth]{../results/four_way_n0p10/figure.png}\\[2pt]
-\includegraphics[width=\linewidth]{../results/four_way_n0p20/figure.png}
-\caption{Gaussian deblur at $\sigma_y=0.10$ (top) and $0.20$ (bottom).}
-\label{fig:gauss_noise}
-\end{figure}
+% \begin{figure}[htbp]\centering
+% \includegraphics[width=\linewidth]{../results/gaussian_n0p10/figure_gaussian.png}\\[2pt]
+% \includegraphics[width=\linewidth]{../results/gaussian_n0p20/figure_gaussian.png}
+% \caption{Gaussian deblur at $\sigma_y=0.10$ (top) and $0.20$ (bottom).}
+% \label{fig:gauss_noise}
+% \end{figure}
 
-\begin{figure}[htbp]\centering
-\includegraphics[width=\linewidth]{../results/motion_n0p10/figure_full.png}\\[2pt]
-\includegraphics[width=\linewidth]{../results/motion_n0p20/figure_full.png}
-\caption{Motion deblur, full frame, at $\sigma_y=0.10$ (top) and $0.20$ (bottom).}
-\label{fig:motion_noise_full}
-\end{figure}
+% \begin{figure}[htbp]\centering
+% \includegraphics[width=\linewidth]{../results/motion_reflect_n0p10/figure_motion.png}\\[2pt]
+% \includegraphics[width=\linewidth]{../results/motion_reflect_n0p20/figure_motion.png}
+% \caption{Motion deblur, full frame, at $\sigma_y=0.10$ (top) and $0.20$ (bottom).}
+% \label{fig:motion_noise_full}
+% \end{figure}
+
+% \begin{figure}[htbp]\centering
+% \includegraphics[width=\linewidth]{../results/defocus_n0p10/figure_defocus.png}\\[2pt]
+% \includegraphics[width=\linewidth]{../results/defocus_n0p20/figure_defocus.png}
+% \caption{Defocus deblur, full frame, at $\sigma_y=0.10$ (top) and $0.20$ (bottom).}
+% \label{fig:defocus_noise}
+% \end{figure}
 
 \paragraph{Summary.}
 For \textbf{Gaussian} blur, the measurement operator and the heat prior share the DCT
 eigenbasis, so the non-hot HQS prior gives an exact, backprop-free, closed-form data step and is
-the best distortion method---beating both a well-tuned classical baseline (HQS$+$TV) and DPS
+the best distortion method---beating both a well-tuned classical baseline (TV) and DPS
 (Table~\ref{tab:gauss}). For \textbf{motion} blur under realistic reflect boundaries the operator
 is not diagonalized by any fast transform, so a closed-form frequency-domain (iFFT) data step
 re-imposes periodic boundaries and rings; we instead solve the same per-step MAP objective with a
 spatial \textbf{conjugate-gradient} data step (the true reflect operator $\mathbf H$,
 Eq.~\ref{eq:cg}), which eliminates the border ring and makes IHDM$+$CG the best full-frame method
 at every noise level (Table~\ref{tab:motion}). Two caveats keep the
-picture honest: (i) \textbf{HQS$+$TV is a very strong classical prior} on Gaussian blur: within
-the identical HQS loop a TV regularizer comes within $\sim\!1$\,dB of the learned prior on the
-Gaussian full frame; on realistic reflect-boundary motion, however, its frequency-domain data
-step rings like the other circulant solvers, and the spatial-CG learned prior wins; and
+picture honest: (i) \textbf{TV is a very strong classical prior}: given the \emph{same} data step
+as the learned prior---the closed-form DCT solve on Gaussian, the spatial-CG solve on motion---a TV
+regularizer comes within $\sim\!1$--$1.8$\,dB of the learned prior on both the Gaussian and motion
+full frames, so the gain over a well-tuned classical prox is real but modest; and
 (ii) \textbf{DPS} is the most
 robust choice when the operator's structure is unknown or perceptual LPIPS is the target,
 since it never diagonalizes $\A$ and only needs $\A,\A^\top$. The learned diffusion prior

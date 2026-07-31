@@ -128,12 +128,46 @@ Follow-up: matched-capacity test = DPS-style x̂₀ guidance on **our** prior (`
 
 ## 9. Update log
 
-- **2026-07-30 (latest)** — **Motion deblur → DEFAULT `R+R+R` (reflect obs + DCT-heat scale-match + spatial-CG data step).**
+- **2026-07-31 (latest)** — **Roadmap + first new modality: DEFOCUS (warm-up).** Baselines (Gaussian
+  deblur, motion deblur) declared complete; next phase planned in `docs/ROADMAP.md` (organizing lens:
+  does the intertwining `L_t A = A K_t` survive for each new `A`? → defocus/CT exact, super-res approx,
+  MRI needs a DFT-vs-DCT basis decision; plus transformer backbone and a Blurring-Diffusion upgrade
+  that noise-floors the forward and cures the whitening fragility below).
+  - **Whitening ablation (single image).** Exact GLS whitening of the scale-matched data term (weight
+    `∝ 1/g_t²`) *degrades monotonically*: floored-whitening sweep `m=(1+ε²)/(g_t²+ε²)` on gaussian#0
+    goes **32.18 dB (ε→∞, isotropic default) → 27.00 dB (ε→0, exact whitening)**, SSIM 0.88→0.70, with
+    MC ≈flat — whitening fits amplified noise on `K_t`-killed frequencies (the `1/|K̂_t|²` blow-up,
+    MATH §4.2). Conclusion: keep the isotropic (annealed-surrogate) data term. (`scratchpad/whiten_test.py`.)
+  - **Defocus deblur, IHDM+CG, `R+R+R`.** Out-of-focus = uniform **disk (pillbox)** PSF, r=7 (15×15),
+    reflect boundary; restoration reuses `scripts/restore_motion_cg.py` **verbatim** (kernel-agnostic
+    spatial CG). Zero new solver code. Intertwining is **exact**: `‖A K_t x − K_t A x‖/‖x‖ ≈ 9e-15`
+    under reflect (vs ~1e-3 for the asymmetric motion kernel) — a symmetric disk stays diagonal in the
+    Neumann/DCT basis. Result @ noise 0.05 (n=16 held-out CelebA-HQ 256): **22.80 → 27.82 dB (+5.02)**,
+    SSIM 0.795, LPIPS 0.314, MC 0.092. Tools: `scripts/make_defocus_obs.py`, `results/defocus/`.
+  - **Defocus → closed-form DCT-HQS (no CG needed).** Because the disk is symmetric in both axes it is
+    exactly **DCT-diagonal** (symmetric-convolution/DCT theorem): extracting its DCT transfer
+    `â = DCT(A·IDCT(1))` gives `‖A x − IDCT(â⊙DCT x)‖/‖A x‖ ≈ 9e-6`. So defocus uses the **same
+    closed-form per-frequency DCT-Wiener step as Gaussian** (`scripts/defocus_hqs.py`), exact and
+    iteration-free — no spatial CG. IHDM+HQS matches IHDM+CG to 0.01 dB (**27.82** vs 27.81 @ σ_y 0.05).
+    **General rule:** symmetric operators (Gaussian, defocus, symmetric anti-alias) → closed-form
+    DCT-HQS; asymmetric (motion) → spatial CG. Report relabeled `IHDM+CG → IHDM+HQS` for defocus.
+  - **Defocus solver alignment + noise 0.10/0.20.** Per "same solver per degradation mode": for defocus
+    (DCT-diagonal) **TV, cold and IHDM all use closed-form DCT-HQS** (Gaussian all-HQS, motion all-CG;
+    defocus now all-HQS). Extended `scripts/defocus_hqs.py` (`--prior cold_diffusion`) and
+    `scripts/run_tv_hqs.py` (`--operator disk`, DCT transfer from the symmetric kernel). TV+HQS = TV+CG to
+    0.00 dB (26.16), confirming CG↔closed-form equivalence on a DCT-diagonal op. Full `tab:defocus`
+    (n=16, IHDM+HQS / cold+HQS / TV / DPS), PSNR best = **IHDM+HQS 27.81 / 26.64 / 25.49** @ σ_y
+    0.05/0.10/0.20; DPS best LPIPS (0.186/0.191/0.203). Figures `results/defocus{,_n0p10,_n0p20}/figure_defocus.png`
+    (high-noise ones commented in the report, motion-style). Obsolete defocus `tv_cg`/`cold_cg` removed.
+    Aside — **Gaussian basis ablation** (`scratchpad/gauss_basis_ablation.py`, 8 C/R combos, 1 img):
+    interior ≈29 dB for ALL, but full-frame swings **15.8 (worst) → 32.2 dB (R,R,R)**; the DFT/circular
+    solver rings, and the fully-circular C,C,C = 17.3 dB confirms a DFT-basis prior would be ~15 dB worse
+    full-frame — no DFT prior needed (report `Basis selection` paragraph corrected accordingly).
+- **2026-07-30** — **Motion deblur → DEFAULT `R+R+R` (reflect obs + DCT-heat scale-match + spatial-CG data step).**
   On realistic reflect-boundary motion observations the closed-form DFT-Wiener (iFFT) data step rings at the
   border; solving the *same* per-step MAP objective with **spatial conjugate gradient** (reflect operator
   `H = A`, exact autograd adjoint, ~12 iters, **no FFT**) removes it. `IHDM+CG` is the best full-frame method
-  at every noise level: **29.74 / 28.40 / 26.78 dB** @ σ_y 0.05/0.10/0.20, 3–5 dB over Wiener/TV/DPS (which
-  inherit the ring). Report `tab:motion` + motion figures rebuilt on reflect obs; the central-crop table and
+  at every noise level: **29.74 / 28.40 / 26.78 dB** @ σ_y 0.05/0.10/0.20, 3–5 dB over TV/DPS. Report `tab:motion` + motion figures rebuilt on reflect obs; the central-crop table and
   the HQS-vs-CG comparison were removed.
   - **Boundary ablation (single image, 2³ combos).** Three independent boundary choices — **A1** how `A` is
     applied to GT (circular/reflect), **A2** how `K_t` is applied to `y` (DFT/DCT-heat), **A3** the solver
@@ -144,7 +178,7 @@ Follow-up: matched-capacity test = DPS-style x̂₀ guidance on **our** prior (`
   - **Commutation error** `‖A K_t x − K_t A x‖/‖x‖` **≈ 1e-3 under reflect** (vs ~1e-7 circular = exact),
     small and boundary-localized — the scale-match `b = K_t y` is a very good approximation. Default going
     forward: **R+R+R**. Tools: `ops/motion_spatial.py` (SpatialMotionBlur + cg_solve),
-    `scripts/{restore_motion_cg, make_motion_obs_reflect, run_wiener_motion, boundary_ablation}.py`.
+    `scripts/{restore_motion_cg, make_motion_obs_reflect, boundary_ablation}.py`.
 - **2026-07-25 (latest+2)** — **Solver comparison #1: SMDC 1-step gradient vs IHDM-HQS MAP** (same IHDM
   prior, same obs, CelebA-128, σ=4, noise 0.05). Best SMDC (surrogate, base 0.1): 24.67 / 0.787 / 0.225 /
   MC 0.112. Best IHDM-HQS MAP (data_weight 64): **25.39 / 0.818 / 0.182 / MC 0.094 — wins all metrics.**

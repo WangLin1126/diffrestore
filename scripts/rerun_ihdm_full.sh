@@ -11,17 +11,17 @@ mkdir -p results/rerun_logs
 # ---- Wave 1 : 4 jobs on 4 GPUs ----
 # Gaussian, DCT, restore.py --solver hqs. sigma_y matched to observation noise.
 CUDA_VISIBLE_DEVICES=0 python scripts/restore.py $COMMON --solver hqs \
-  --clean_dir results/four_way/clean --observation_dir results/four_way/observation \
+  --clean_dir results/gaussian/clean --observation_dir results/gaussian/observation \
   --blur_sigma 4 --noise_std 0.05 --sigma_y 0.05 --device cuda:0 \
-  --out results/four_way/ihdm_hqs > results/rerun_logs/g05.log 2>&1 &
+  --out results/gaussian/ihdm_hqs > results/rerun_logs/g05.log 2>&1 &
 CUDA_VISIBLE_DEVICES=1 python scripts/restore.py $COMMON --solver hqs \
-  --clean_dir results/four_way_n0p10/clean --observation_dir results/four_way_n0p10/observation \
+  --clean_dir results/gaussian_n0p10/clean --observation_dir results/gaussian_n0p10/observation \
   --blur_sigma 4 --noise_std 0.10 --sigma_y 0.10 --device cuda:0 \
-  --out results/four_way_n0p10/ihdm_hqs > results/rerun_logs/g10.log 2>&1 &
+  --out results/gaussian_n0p10/ihdm_hqs > results/rerun_logs/g10.log 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python scripts/restore.py $COMMON --solver hqs \
-  --clean_dir results/four_way_n0p20/clean --observation_dir results/four_way_n0p20/observation \
+  --clean_dir results/gaussian_n0p20/clean --observation_dir results/gaussian_n0p20/observation \
   --blur_sigma 4 --noise_std 0.20 --sigma_y 0.20 --device cuda:0 \
-  --out results/four_way_n0p20/ihdm_hqs > results/rerun_logs/g20.log 2>&1 &
+  --out results/gaussian_n0p20/ihdm_hqs > results/rerun_logs/g20.log 2>&1 &
 # Motion, DFT, restore_motion_dft.py. sigma_y=0.05.
 CUDA_VISIBLE_DEVICES=3 python scripts/restore_motion_dft.py $COMMON \
   --clean_dir results/motion/clean --observation_dir results/motion/observation \
