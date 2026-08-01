@@ -4,14 +4,17 @@ BDM is an improvement of IHDM, so the 256px path reuses IHDM's net (~211M) and i
 tricks/settings from model/ihdm_backbone: linear LR warmup, EMA with num_updates ramp (decay
 0.9999), grad-clip 1.0, blur scaled with resolution (blur_sigma_max=128 @256px), DataParallel.
 
-Data is a uint8 tensor (N,C,H,W) in [0,255] saved via torch.save (same as scripts/train_ihdm.py);
-images are normalized to [-1,1].  Use --smoke for a random-data plumbing test.
+Data is a uint8 tensor (N,C,H,W) in [0,255] saved via torch.save (build it with
+model/bdm_backbone/prepare_data.py); images are normalized to [-1,1].  Use --smoke for a
+random-data plumbing test.  See model/bdm_backbone/RUNNING.md for the full remote recipe.
 
+  # CIFAR-10 (paper Table-5 arch); scale --batch to the GPUs, --lr ~sqrt with batch:
+  python -m model.bdm_backbone.prepare_data --dataset cifar10
+  python -m model.bdm_backbone.train --data_pt data/cifar10/cifar10_uint8.pt \
+     --preset cifar10 --batch 512 --lr 4e-4 --gpus 0 1 2 3
   # FFHQ-256, IHDM-matched 211M net + settings (80GB or multi-GPU):
   python -m model.bdm_backbone.train --data_pt data/ffhq256/ffhq256_uint8.pt \
      --preset ihdm256 --steps 200000 --batch 32 --gpus 0 1 2 3
-  # CIFAR-scale:
-  python -m model.bdm_backbone.train --data_pt data/cifar.pt --preset cifar10 --batch 128 --lr 2e-4
 """
 from __future__ import annotations
 import os, sys, time, copy, argparse
