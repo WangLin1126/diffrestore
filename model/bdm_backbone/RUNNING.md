@@ -1,4 +1,4 @@
-# Running the BDM CIFAR-10 experiment (remote)
+# Running BDM experiments (remote): CIFAR-10 & FFHQ-256
 
 Train a Blurring Diffusion Model on CIFAR-10 with the paper's architecture (Hoogeboom &
 Salimans 2023, Table 5) and generate samples. 
@@ -72,8 +72,43 @@ python -m model.bdm_backbone.sample --ckpt checkpoint/bdm/cifar10.pth \
 ```
 Uses the EMA weights; more `--steps` (e.g. 1000) = higher quality than the in-training previews.
 
+## 6. FFHQ-256 (211M, IHDM-matched backbone)
+
+Blurring diffusion on the **exact IHDM NCSN++ net** (`--preset ihdm256` → 210.9M params,
+channel_mult (1,2,3,4,5), attn @16&8, 256px). Sizes 1–5 above all apply; only the data, preset,
+and defaults change. This is an 80 GB / multi-GPU config.
+
+**Data** — already built in this repo: `data/ffhq256/ffhq256_uint8.pt`, `(70000,3,256,256)` uint8
+(~13.7 GB). To rebuild elsewhere from a folder of FFHQ PNGs:
+```bash
+python -m model.bdm_backbone.prepare_data --dataset folder --root <ffhq_png_dir> \
+  --image_size 256 --out data/ffhq256/ffhq256_uint8.pt
+```
+
+**Launch** — `--preset ihdm256` pulls the IHDM defaults automatically: **lr 2e-5**,
+**sigma_blur_max 128** (blur scaled to 256px), EMA 0.9999, 5k warmup, grad-clip 1.0.
+```bash
+python -m model.bdm_backbone.train \
+  --data_pt data/ffhq256/ffhq256_uint8.pt --preset ihdm256 \
+  --batch 32 --gpus 0 1 2 3 --steps 300000 \
+  --ckpt_every 5000 --sample_every 10000 --sample_steps 250 \
+  --out checkpoint/bdm/ffhq256.pth --sample_dir results/bdm_ffhq256 \
+  > results/bdm_ffhq256/train.log 2>&1 &
+```
+
+**Sizing** — `img_size_256_full` is the 80 GB config (~14–16 img/GPU). Set `--batch` to
+`per_gpu × #GPUs` and scale `--lr` ~√(batch) from the 2e-5 base:
+
+| GPU memory | per-GPU batch | e.g. `--batch` on 4 GPUs |
+|---|---|---|
+| 80 GB | 12–14 | 48 (lr ~2.4e-5) |
+| 40 GB | 6 | 24 (lr ~1.7e-5) |
+| 24 GB | 2–3 | 8–12 (tight; if OOM, lower `--batch`) |
+
+256px sampling is slow — keep `--sample_every` large (10k) and `--sample_steps 250` for previews;
+use 500–1000 steps for final samples (§5). Resume with `--resume` exactly as §4. FFHQ needs on the
+order of 10⁵ steps before faces sharpen; early grids are blurry.
+
 ## Notes / knobs
-- `sigma_blur_max=0` recovers a plain DDPM baseline (ablation).
-- Single GPU: `--gpus 0` and a batch that fits (e.g. 128–256).
-- FFHQ-256 (IHDM-matched 211M net): `--preset ihdm256` after building a 256px `--data_pt`; needs
-  80 GB or multi-GPU, defaults lr 2e-5 / blur 128.
+- `--sigma_blur_max 0` recovers a plain DDPM baseline (ablation), for either dataset.
+- Single GPU: `--gpus 0` and a batch that fits (CIFAR 128–256; FFHQ 2–4).
