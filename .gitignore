@@ -24,3 +24,6 @@ __pycache__/
 hf_token.txt
 .vscode/
 *.pdf
+*.gz
+!data/loaders.py
+!data/__init__.py
