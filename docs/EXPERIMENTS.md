@@ -128,7 +128,26 @@ Follow-up: matched-capacity test = DPS-style x̂₀ guidance on **our** prior (`
 
 ## 9. Update log
 
-- **2026-07-31 (latest)** — **Roadmap + first new modality: DEFOCUS (warm-up).** Baselines (Gaussian
+- **2026-07-31 (latest)** — **Second new modality: CT (parallel-beam Radon), operator + intertwining +
+  end-to-end PoC.** The measurement space *changes* (image → sinogram), so unlike deblur the companion
+  is **not** `L_t=K_t`: the Fourier-slice theorem gives `R(K_t x)=L_t(R x)` with `L_t` = **1-D heat blur
+  along the detector axis** (`ops/ct.py::DetectorHeatBlur`, transfer `exp(-½σ_t²(πk/W)²)`), the CT
+  analogue of the deblur companion. `ParallelBeamRadon` (differentiable rotate-and-sum; adjoint = VJP
+  back-projection). **Gates** (`tests/gates.py`, now 6): CT adjoint `<Rx,s>=<x,Rᵀs>` = **1.5e-14** (exact);
+  CT intertwining verified but discretization-limited (continuum identity on a discrete projector):
+  natural image, **H=256 → 0.2% fine / 4.5% coarse; H=64 → 0.9% / 14%** — tightens with resolution, and
+  the SMDC continuation weights the fine scales (sub-%) most. White-noise input is the worst case (9→42%).
+  **Reconstruction** (`scripts/ct_demo.py`, 180-view, σ_y=0.01, IHDM prior): reused the motion-CG data
+  step verbatim, only swapping A=Radon (normalized ‖R‖=1 by power iteration — Radon RᵀR has scale ~H=203,
+  else the ill-posed data term swamps the prior) and target `L_{t-1} y` in sinogram space. From an
+  indistinct back-projection SMDC recovers **sharp, recognizable faces** (`results/ct_demo/figure_ct.png`,
+  15.5 dB/SSIM 0.64 and 11.5/0.18). **Open items (genuine tuning, not plumbing):** metrics are dragged
+  down by (a) streaks in the corners *outside* the inscribed-disk FOV (parallel-beam can't recover them;
+  faces fill the frame, violating CT support — a hard-disk FOV mask *hurt* because the sharp −1 boundary
+  is hostile to the face prior), (b) per-channel color fringing (RGB Radon; real CT is grayscale),
+  (c) unfiltered RᵀR is low-pass → a ramp/FBP-preconditioned data step would sharpen. Verdict: operator +
+  intertwining + solver all validated; benchmark-quality CT needs proper phantoms + ramp preconditioning.
+- **2026-07-31** — **Roadmap + first new modality: DEFOCUS (warm-up).** Baselines (Gaussian
   deblur, motion deblur) declared complete; next phase planned in `docs/ROADMAP.md` (organizing lens:
   does the intertwining `L_t A = A K_t` survive for each new `A`? → defocus/CT exact, super-res approx,
   MRI needs a DFT-vs-DCT basis decision; plus transformer backbone and a Blurring-Diffusion upgrade

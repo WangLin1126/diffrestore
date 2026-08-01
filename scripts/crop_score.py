@@ -1,8 +1,8 @@
 """Central-crop metric helper: score recon dir against clean dir on the central CxC crop.
 
 Used for the motion 'interior' table (boundary artifacts excluded).
-  python scripts/crop_score.py --clean results/motion/clean \
-      --recon results/motion/ihdm_hqs_dft/recon --crop 128
+  python scripts/crop_score.py --clean results/motion_reflect/clean \
+      --recon results/motion_reflect/ihdm_hqs/recon --crop 128
 Also (optionally) writes the cropped recon PNGs to --save_dir for the figure.
 """
 import os, sys, glob, argparse

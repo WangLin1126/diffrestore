@@ -1,9 +1,18 @@
 # Roadmap — extending Scale-Matched Data Consistency (SMDC)
 
-Status baseline (2026-07-31): Gaussian deblur (IHDM+HQS, DCT-exact) and motion deblur
-(IHDM+CG, reflect-boundary `R+R+R`) complete and in `docs/hqs_report.tex`. This document
+Status baseline (2026-07-31): Gaussian deblur (IHDM+HQS, DCT-exact), motion deblur
+(IHDM+CG, reflect-boundary `R+R+R`), and **defocus deblur** (IHDM+HQS, closed-form
+DCT-Wiener, three noise levels) complete and in `docs/hqs_report.tex`. This document
 plans the next phase: more degradation models, a stronger backbone, and a Blurring-Diffusion
 upgrade of the heat framework.
+
+**Solver-alignment principle (established 2026-07-31).** For each degradation mode, TV,
+cold, and IHDM all use the *same* data-consistency solver, chosen by the operator's symmetry:
+a both-axes-symmetric kernel under reflect (half-sample-symmetric) boundary is exactly
+diagonalized by DCT-II — the Neumann heat basis — so **Gaussian and defocus get a closed-form
+DCT-Wiener HQS step** (`â = DCT(A·IDCT(𝟙))`, diagonalization residual ~9e-6), while the
+**asymmetric motion kernel needs spatial reflect-CG**. CG and the closed-form DCT solve agree
+to ~0.01 dB where both apply, so the split is an efficiency choice, not an accuracy one.
 
 ---
 
@@ -23,10 +32,10 @@ single question sorts the modality list:
 
 | Modality | Forward `A` | Companion `L_t` | Intertwining | Fit |
 |---|---|---|---|---|
-| Gaussian deblur ✅ | isotropic conv | `L_t = K_t` | exact (circular) / ~1e-3 (reflect) | done |
-| Motion deblur ✅ | motion conv | `L_t = K_t` | ~1e-3 (reflect) | done |
-| **Defocus** | disk/pillbox conv | `L_t = K_t` | exact (circular) / ~1e-3 (reflect) | **trivial — new kernel only** |
-| **CT** | Radon `R` | **1D heat blur along detector axis** | **exact** (Fourier-slice theorem) | clean & novel |
+| Gaussian deblur ✅ | isotropic conv | `L_t = K_t` | exact (circular) / ~1e-3 (reflect) | done (DCT-HQS) |
+| Motion deblur ✅ | motion conv | `L_t = K_t` | ~1e-3 (reflect) | done (reflect-CG) |
+| Defocus deblur ✅ | disk/pillbox conv | `L_t = K_t` | exact (circular) / ~1e-15 (DCT-diagonal) | **done (closed-form DCT-HQS)** |
+| CT ◐ | Radon `R` | **1D heat blur along detector axis** | continuum-exact; ~0.2% fine / 4.5% coarse @256 (discrete) | **operator+gate+PoC done; tuning open** |
 | **Super-res** ×s | blur ∘ downsample | heat blur on the **LR grid** (coarse `K_t`) | exact up to aliasing (small) | easy + aliasing gate |
 | **MRI** | mask ∘ `F` | k-space multiply by `g_t` on sampled lines | **exact iff prior uses DFT/periodic heat** (not DCT) | basis decision first |
 
@@ -51,11 +60,23 @@ loop) is reused verbatim.
 
 Per-modality plan and the acceptance gate each needs:
 
-- **Defocus** *(in progress)* — disk/pillbox PSF into the existing motion-CG pipeline.
-  `L_t = K_t` (same as deblur). Gate: reuse `gate_intertwining` with the disk kernel.
-- **CT** — add a Radon forward (`torch-radon` or a differentiable projector; adjoint =
-  backprojection via VJP). `L_t` = 1-D heat blur of the sinogram along the detector axis.
-  New gate `gate_intertwining_ct`: `R(K_t x)` vs `L̃_t(R x)` < 1e-3.
+- **Defocus** ✅ *(done, 2026-07-31)* — disk/pillbox PSF. `L_t = K_t` (same as deblur), and
+  because the disk is symmetric it is DCT-diagonal, so TV/cold/IHDM all use the **closed-form
+  DCT-Wiener HQS** data step (no CG needed; `scripts/defocus_hqs.py`, `run_tv_hqs.py --operator
+  disk`). Results at σ_y ∈ {0.05, 0.10, 0.20}, n=16 (`tab:defocus`): IHDM+HQS
+  **27.81 / 26.64 / 25.49 dB** beats TV (26.16 / 25.16 / 23.91) and cold (24.10 / 24.50 / 24.00);
+  DPS is the circulant baseline (best LPIPS). Intertwining residual ~1e-15.
+- **CT** ◐ *(operator + gate + PoC done, 2026-07-31)* — `ops/ct.py`: `ParallelBeamRadon`
+  (pure-torch differentiable rotate-and-sum; adjoint = VJP back-projection, exact to 1e-14) +
+  `DetectorHeatBlur` (1-D detector-axis heat companion `L_t`). Gates `gate_ct_adjoint` and
+  `gate_intertwining_ct` in `tests/gates.py`. The Fourier-slice intertwining `R(K_t x)=L_t(R x)`
+  is a *continuum* identity → on the discrete projector it holds to ~0.2% (fine) / 4.5% (coarse)
+  at 256, tightening with resolution — looser than deblur's 1e-3 but fine for SMDC (the
+  continuation weights fine scales most). `scripts/ct_demo.py` reconstructs recognizable faces
+  from 180-view sinograms (reuse motion-CG, normalize `‖R‖=1`, target `L_{t-1} y`).
+  **Open (tuning, not plumbing):** inscribed-disk FOV / proper phantoms (faces fill the frame),
+  grayscale vs per-channel color, and a ramp/FBP-preconditioned data step (unfiltered `RᵀR` is
+  low-pass). See EXPERIMENTS 2026-07-31.
 - **Super-res** — `A = B_antialias ∘ D_s`; adjoint = `Dᵀ ∘ Bᵀ` (upsample-zero then blurᵀ),
   free via VJP. `L_t` = heat blur on the LR grid. New gate `gate_intertwining_sr` to quantify
   the aliasing residual `D(K_t x)` vs `K_t^LR(D x)`.
@@ -117,8 +138,11 @@ Since both §2 (transformer) and §3 (BDM) force a retrain, that retrain is the 
 
 ## Recommended sequence
 
-1. **Defocus** — warm-up; proves "any convolution", zero new math. *(in progress, noise 0.05)*
-2. **CT** — highest novelty-per-effort; exact Fourier-slice intertwining.
+1. **Defocus** ✅ — warm-up; proved "any convolution" + closed-form DCT-HQS for symmetric
+   kernels; three noise levels done. *(complete)*
+2. **CT** ◐ — operator, both gates, and an end-to-end PoC done (recognizable faces from 180
+   views); remaining work is CT-specific tuning (disk FOV / phantoms, grayscale, ramp-preconditioned
+   data step). *(core validated)*
 3. **Super-res** — `L_t` = LR-grid heat blur + aliasing gate.
 4. **MRI** — after the eigenbasis decision (§4); Cartesian → radial.
 5. **BDM upgrade (§3)** — retrain here; subsumes the whitening fix.
