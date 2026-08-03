@@ -21,30 +21,34 @@ Downloads CIFAR-10 and writes a `(50000,3,32,32)` uint8 tensor (~154 MB). Idempo
 
 ## 2. Launch training
 
+Paper-faithful CIFAR-10 (batch 128, lr 2e-4), with mixed precision for speed:
 ```bash
 python -m model.bdm_backbone.train \
   --data_pt data/cifar10/cifar10_uint8.pt --preset cifar10 \
-  --batch 512 --lr 4e-4 --gpus 0 1 2 3 --steps 500000 \
-  --ckpt_every 5000 --sample_every 2000 --sample_steps 250 \
+  --batch 128 --lr 2e-4 --gpus 0 1 2 3 --steps 2000000 --amp auto \
+  --ckpt_every 5000 --sample_every 10000 --sample_steps 250 \
   --out checkpoint/bdm/cifar10.pth --sample_dir results/bdm_cifar10 \
   > results/bdm_cifar10/train.log 2>&1 &
 ```
 
-Fixed paper settings (from `--preset cifar10`): net = 49.5M-param UNet (ch 256, ch_mult (1,1,1),
-attn @16&8, 3 resblocks, dropout 0.2); `sigma_blur_max=20`; VP-cosine noise logsnr∈[−10,10];
-Adam β1=0.9, EMA 0.9999, grad-clip 1.0, 5k linear LR warmup.
+**Original paper settings** (Hoogeboom & Salimans, Table 5 / A.2), all fixed by `--preset cifar10`:
+net = 49.5M UNet (ch 256, ch_mult (1,1,1), attn @16&8, 3 resblocks, dropout 0.2); `sigma_blur_max=20`
+(their best CIFAR value); sin² blur schedule; VP-cosine noise logsnr∈[−10,10]; d_min=1e-3;
+**Adam lr 2e-4, batch 128, EMA 0.9999**; unweighted ε-MSE; 2M steps. (The 5k LR warmup is an
+implementation add-on, not in the paper — set `--warmup 0` for strict adherence.)
 
-### Sizing `--batch` / `--lr` to the GPUs
-`--gpus` uses DataParallel (batch split evenly). Pick the batch to fill memory; scale lr ~√(batch):
+### Mixed precision (`--amp`)
+`--amp auto` = **bf16 on Ampere+ (cc≥8, e.g. A100/H100)**, **fp16 on Turing/Volta** — ~2× faster
+than fp32 at 256px, and does **not** change any paper hyperparameter (fp32 master weights, same
+schedule/lr/EMA). Force with `--amp bf16|fp16`, or `--amp off` for exact fp32. fp16 uses a
+GradScaler (saved in the checkpoint); bf16 needs none. Works with the 211M net's gradient
+checkpointing (the checkpoint recompute is autocast-aware).
 
-| `--batch` (÷ #GPUs) | mem/GPU (24 GB card) | throughput | `--lr` |
-|---|---|---|---|
-| 128 | ~5 GB (under-utilized) | ~130 img/s | 2e-4 (paper) |
-| **512** | **~18–19 GB** | **~520+ img/s** | **4e-4** |
-| 768 | ~22 GB (near full) | higher | 5e-4 |
-
-Total training is batch-invariant in images: **500k × 512 = 256M images = the paper's 2M × 128.**
-On other hardware, keep `steps × batch ≈ 2.5e8` for a paper-equivalent run.
+### If you want to fill the GPUs instead (deviates from the paper)
+`--gpus` uses DataParallel (batch split evenly). Raising the batch fills memory and improves
+throughput but changes the training regime; scale lr ~√(batch): e.g. `--batch 512 --lr 4e-4`
+(~18 GB/24 GB card). Total images are batch-invariant, so keep `steps × batch ≈ 2.5e8` (= the
+paper's 2M × 128) for an equivalent run. For real multi-GPU speedup, DDP would beat DataParallel.
 
 ## 3. Monitor
 
@@ -55,14 +59,21 @@ On other hardware, keep `steps × batch ≈ 2.5e8` for a paper-equivalent run.
 
 ## 4. Resume after a preemption
 
-Checkpoints (`checkpoint/bdm/cifar10.pth`, every `--ckpt_every`) hold model+EMA+optimizer+step.
+Checkpoints (every `--ckpt_every`) hold **model + EMA + optimizer + GradScaler + step**. Point
+`--resume` at the checkpoint; it prints `resumed @ <step>` and continues (LR warmup/schedule pick up
+from that step). Re-pass the **same flags** as the original run (`--preset`, `--batch`, `--lr`, ...);
+keep `--out` = `--resume` to keep writing the same file.
 
 ```bash
 python -m model.bdm_backbone.train --data_pt data/cifar10/cifar10_uint8.pt --preset cifar10 \
-  --batch 512 --lr 4e-4 --gpus 0 1 2 3 --steps 500000 \
+  --batch 128 --lr 2e-4 --gpus 0 1 2 3 --steps 2000000 --amp auto \
   --out checkpoint/bdm/cifar10.pth --resume checkpoint/bdm/cifar10.pth \
   >> results/bdm_cifar10/train.log 2>&1 &
 ```
+
+Notes: a checkpoint written **before** the AMP change (no scaler key) still resumes fine — the
+scaler just starts fresh. Resuming an fp32 run with `--amp` (or vice-versa) is safe (master weights
+and optimizer state are fp32); use `--amp off` if you want a bit-for-bit fp32 continuation.
 
 ## 5. Sample from a checkpoint (inference)
 
@@ -90,7 +101,7 @@ python -m model.bdm_backbone.prepare_data --dataset folder --root <ffhq_png_dir>
 ```bash
 python -m model.bdm_backbone.train \
   --data_pt data/ffhq256/ffhq256_uint8.pt --preset ihdm256 \
-  --batch 32 --gpus 0 1 2 3 --steps 300000 \
+  --batch 32 --gpus 0 1 2 3 --steps 300000 --amp auto \
   --ckpt_every 5000 --sample_every 10000 --sample_steps 250 \
   --out checkpoint/bdm/ffhq256.pth --sample_dir results/bdm_ffhq256 \
   > results/bdm_ffhq256/train.log 2>&1 &
@@ -105,9 +116,21 @@ python -m model.bdm_backbone.train \
 | 40 GB | 6 | 24 (lr ~1.7e-5) |
 | 24 GB | 2–3 | 8–12 (tight; if OOM, lower `--batch`) |
 
+**Resume** — re-run with `--resume` pointing at the checkpoint and the same flags (drop `--amp`
+to use `auto` = bf16 on Ampere+). `>>` appends to the existing log:
+```bash
+python -m model.bdm_backbone.train --data_pt data/ffhq256/ffhq256_uint8.pt --preset ihdm256 \
+  --batch 128 --lr 5e-5 --gpus 0 1 2 3 --steps 300000 \
+  --out checkpoint/bdm/ffhq256.pth --sample_dir results/bdm_ffhq256 \
+  --resume checkpoint/bdm/ffhq256.pth \
+  >> results/bdm_ffhq256/train.log 2>&1 &
+```
+Prints `resumed @ <step>` and continues (EMA + optimizer + GradScaler + step restored). Starting
+fresh (no checkpoint yet) is the same command without `--resume`.
+
 256px sampling is slow — keep `--sample_every` large (10k) and `--sample_steps 250` for previews;
-use 500–1000 steps for final samples (§5). Resume with `--resume` exactly as §4. FFHQ needs on the
-order of 10⁵ steps before faces sharpen; early grids are blurry.
+use 500–1000 steps for final samples (§5). FFHQ needs on the order of 10⁵ steps before faces
+sharpen; early grids are blurry.
 
 ## Notes / knobs
 - `--sigma_blur_max 0` recovers a plain DDPM baseline (ablation), for either dataset.

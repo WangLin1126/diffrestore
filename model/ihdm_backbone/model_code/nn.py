@@ -154,6 +154,13 @@ class CheckpointFunction(th.autograd.Function):
         ctx.run_function = run_function
         ctx.input_tensors = list(args[:length])
         ctx.input_params = list(args[length:])
+        # capture autocast state so the backward recompute matches the forward dtype
+        # (no-op when autocast is off, so fp32 training is unchanged); enables AMP.
+        ctx.gpu_autocast_kwargs = {
+            "enabled": th.is_autocast_enabled(),
+            "dtype": th.get_autocast_gpu_dtype(),
+            "cache_enabled": th.is_autocast_cache_enabled(),
+        }
         with th.no_grad():
             output_tensors = ctx.run_function(*ctx.input_tensors)
         return output_tensors
@@ -162,7 +169,7 @@ class CheckpointFunction(th.autograd.Function):
     def backward(ctx, *output_grads):
         ctx.input_tensors = [x.detach().requires_grad_(True)
                              for x in ctx.input_tensors]
-        with th.enable_grad():
+        with th.enable_grad(), th.autocast("cuda", **ctx.gpu_autocast_kwargs):
             # Fixes a bug where the first op in run_function modifies the
             # Tensor storage in place, which is not allowed for detach()'d
             # Tensors.

@@ -49,6 +49,9 @@ def main():
     ap.add_argument("--beta1", type=float, default=0.9)
     ap.add_argument("--ema_decay", type=float, default=0.9999)
     ap.add_argument("--grad_clip", type=float, default=1.0)
+    ap.add_argument("--amp", choices=["auto", "bf16", "fp16", "off"], default="auto",
+                    help="mixed precision (speed); does not change any paper hyperparameter. "
+                         "auto = bf16 if supported else fp16")
     ap.add_argument("--gpus", type=int, nargs="+", default=[0])
     ap.add_argument("--log_every", type=int, default=100)
     ap.add_argument("--ckpt_every", type=int, default=5000)
@@ -78,9 +81,21 @@ def main():
     diff = BlurringDiffusion(sch)
     ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay, use_num_updates=True)
     opt = torch.optim.Adam(model.parameters(), lr=lr, betas=(args.beta1, 0.999))
+    # mixed precision (speed only; schedule/arch/optim unchanged) ------------------------------
+    amp_dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "off": None}.get(args.amp)
+    if args.amp == "auto":
+        # Ampere+ (cc>=8) has fast native bf16; Turing/Volta only have fast fp16 tensor cores
+        # (bf16 there runs in software and is SLOWER, so is_bf16_supported() is the wrong gate).
+        cc = torch.cuda.get_device_capability(args.gpus[0])[0] if torch.cuda.is_available() else 0
+        amp_dtype = torch.bfloat16 if cc >= 8 else torch.float16
+    amp_on = amp_dtype is not None and str(primary).startswith("cuda")
+    use_scaler = amp_on and amp_dtype == torch.float16              # bf16 needs no loss scaling
+    scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
     n_params = sum(p.numel() for p in base.parameters()) / 1e6
+    amp_name = (str(amp_dtype).replace("torch.", "") if amp_on else "fp32")
     print(f"  BDM[{base.cfg.backbone}]: {n_params:.1f}M params | {H}px | sigma_blur_max={blur} | "
-          f"batch={args.batch} | lr={lr:.1e} | warmup={args.warmup} | gpus={args.gpus}", flush=True)
+          f"batch={args.batch} | lr={lr:.1e} | warmup={args.warmup} | amp={amp_name} | gpus={args.gpus}",
+          flush=True)
 
     # data ------------------------------------------------------------------------------------
     if args.smoke:
@@ -97,6 +112,8 @@ def main():
     if args.resume and os.path.exists(args.resume):
         ck = torch.load(args.resume, map_location=primary, weights_only=False)
         base.load_state_dict(ck["model"]); ema.load_state_dict(ck["ema_state"]); opt.load_state_dict(ck["opt"])
+        if use_scaler and ck.get("scaler") is not None:            # optional: pre-AMP ckpts lack it
+            scaler.load_state_dict(ck["scaler"])
         start = ck["step"]; print(f"  resumed @ {start}", flush=True)
 
     def save_ckpt(step):
@@ -104,8 +121,8 @@ def main():
         ema_model_sd = copy.deepcopy(base.state_dict())         # EMA weights as a plain model state_dict
         ema.restore(model.parameters())
         torch.save({"model": base.state_dict(), "ema": ema_model_sd, "ema_state": ema.state_dict(),
-                    "opt": opt.state_dict(), "cfg": base.cfg.__dict__, "sch": sch.cfg.__dict__,
-                    "step": step}, args.out)
+                    "opt": opt.state_dict(), "scaler": scaler.state_dict() if use_scaler else None,
+                    "cfg": base.cfg.__dict__, "sch": sch.cfg.__dict__, "step": step}, args.out)
 
     model.train()
     t0 = time.time(); run = torch.zeros((), device=primary)
@@ -115,11 +132,13 @@ def main():
             g["lr"] = cur_lr
         idx = torch.randint(0, N, (args.batch,))
         x = data[idx].to(primary).float().div(127.5).sub(1.0)          # [-1,1]
-        loss = diff.loss(model, x)
+        with torch.autocast("cuda", dtype=amp_dtype, enabled=amp_on):
+            loss = diff.loss(model, x)
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        scaler.scale(loss).backward()
+        scaler.unscale_(opt)                                           # no-op when scaler disabled
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-        opt.step()
+        scaler.step(opt); scaler.update()
         ema.update(model.parameters())
 
         run += loss.detach()                                            # accumulate on-device (no sync)
