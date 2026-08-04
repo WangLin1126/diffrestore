@@ -11,11 +11,11 @@ run_noise () {  # $1 dir  $2 sigma_y  $3 gpu-offset
   D="$1"; SY="$2"
   K="results/$D/kernel.npy"; CL="results/$D/clean"; OB="results/$D/observation"; TAG="${D}"
   # IHDM + CG  (gpu0)
-  CUDA_VISIBLE_DEVICES=0 python scripts/restore_motion_cg.py --prior ihdm --ihdm_config img_size_256_full \
+  CUDA_VISIBLE_DEVICES=0 python scripts/deblur.py restore --operator motion --prior ihdm --ihdm_config img_size_256_full \
     --ckpt "$IHDM" --clean_dir "$CL" --observation_dir "$OB" --kernel_npy "$K" --sigma_y "$SY" \
     --cg_iters 12 --n 16 --device cuda:0 --out results/$D/ihdm_cg > results/rerun_logs/${TAG}_ihdmcg.log 2>&1 &
   # cold + CG  (gpu1)
-  CUDA_VISIBLE_DEVICES=1 python scripts/restore_motion_cg.py --prior cold_diffusion \
+  CUDA_VISIBLE_DEVICES=1 python scripts/deblur.py restore --operator motion --prior cold_diffusion \
     --ckpt "$COLD" --image_size 256 --ch 128 --ch_mult 1 1 2 2 4 --num_res_blocks 2 \
     --clean_dir "$CL" --observation_dir "$OB" --kernel_npy "$K" --sigma_y "$SY" \
     --cg_iters 12 --n 16 --device cuda:0 --out results/$D/cold_cg > results/rerun_logs/${TAG}_coldcg.log 2>&1 &

@@ -17,26 +17,12 @@ import argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import numpy as np
-import torch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from PIL import Image
 
 from utils.metrics import psnr, ssim, lpips_metric
-
-
-def load(d, n=None):
-    paths = sorted(glob.glob(os.path.join(d, "*.png")))
-    if n:
-        paths = paths[:n]
-    xs = [torch.from_numpy(np.asarray(Image.open(p).convert("RGB"), dtype=np.float32))
-          .permute(2, 0, 1) / 127.5 - 1.0 for p in paths]
-    return torch.stack(xs)
-
-
-def to01(x):
-    return ((x.clamp(-1, 1) + 1) / 2).permute(1, 2, 0).numpy()
+from utils.pipeline import load_dir as load, to_img as to01
 
 
 def main():

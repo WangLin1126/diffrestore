@@ -8,18 +8,9 @@ Also (optionally) writes the cropped recon PNGs to --save_dir for the figure.
 import os, sys, glob, argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
-import torch
 from PIL import Image
 from utils.metrics import psnr, ssim, lpips_metric
-
-
-def load(d, n=None):
-    paths = sorted(glob.glob(os.path.join(d, "*.png")))
-    if n:
-        paths = paths[:n]
-    xs = [torch.from_numpy(np.asarray(Image.open(p).convert("RGB"), dtype=np.float32))
-          .permute(2, 0, 1) / 127.5 - 1.0 for p in paths]
-    return torch.stack(xs), paths
+from utils.pipeline import load_dir
 
 
 def center_crop(x, c):
@@ -38,8 +29,8 @@ def main():
     ap.add_argument("--label", default="recon")
     args = ap.parse_args()
 
-    clean, _ = load(args.clean)
-    recon, rpaths = load(args.recon, len(clean))
+    clean = load_dir(args.clean)
+    recon = load_dir(args.recon, len(clean))
     n = len(clean)
     cc = lambda x: center_crop(x, args.crop)
     ps = np.mean([psnr(cc(recon[i]), cc(clean[i])) for i in range(n)])

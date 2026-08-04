@@ -55,14 +55,14 @@ uses **Neumann/DCT** heat. DCT-heat ≠ DFT-heat → the commutation is only app
 The universal enabler is already built: the **spatial CG data step** needs only `A·v` and
 `Aᵀ·v`, and the **autograd-VJP adjoint** (`ops/motion_spatial.py::SpatialMotionBlur.adjoint`)
 gives the *exact* adjoint of any differentiable forward for free. So each new modality needs
-only a forward operator + a scale-matched target `L_t y`; the solver (`restore_motion_cg.py`
+only a forward operator + a scale-matched target `L_t y`; the solver (`utils/pipeline.py::smdc_cg`
 loop) is reused verbatim.
 
 Per-modality plan and the acceptance gate each needs:
 
 - **Defocus** ✅ *(done, 2026-07-31)* — disk/pillbox PSF. `L_t = K_t` (same as deblur), and
   because the disk is symmetric it is DCT-diagonal, so TV/cold/IHDM all use the **closed-form
-  DCT-Wiener HQS** data step (no CG needed; `scripts/defocus_hqs.py`, `run_tv_hqs.py --operator
+  DCT-Wiener HQS** data step (no CG needed; `scripts/deblur.py restore --operator defocus`, `run_tv_hqs.py --operator
   disk`). Results at σ_y ∈ {0.05, 0.10, 0.20}, n=16 (`tab:defocus`): IHDM+HQS
   **27.81 / 26.64 / 25.49 dB** beats TV (26.16 / 25.16 / 23.91) and cold (24.10 / 24.50 / 24.00);
   DPS is the circulant baseline (best LPIPS). Intertwining residual ~1e-15.
@@ -72,7 +72,7 @@ Per-modality plan and the acceptance gate each needs:
   `gate_intertwining_ct` in `tests/gates.py`. The Fourier-slice intertwining `R(K_t x)=L_t(R x)`
   is a *continuum* identity → on the discrete projector it holds to ~0.2% (fine) / 4.5% (coarse)
   at 256, tightening with resolution — looser than deblur's 1e-3 but fine for SMDC (the
-  continuation weights fine scales most). `scripts/ct_demo.py` reconstructs recognizable faces
+  continuation weights fine scales most). `scripts/ct.py` reconstructs recognizable faces
   from 180-view sinograms (reuse motion-CG, normalize `‖R‖=1`, target `L_{t-1} y`).
   **Open (tuning, not plumbing):** inscribed-disk FOV / proper phantoms (faces fill the frame),
   grayscale vs per-channel color, and a ramp/FBP-preconditioned data step (unfiltered `RᵀR` is
@@ -86,10 +86,10 @@ Per-modality plan and the acceptance gate each needs:
   `lr_heat_schedule`). Gates `gate_sr_adjoint` + `gate_intertwining_sr` in `tests/gates.py`: the
   decimation intertwining `A(K_t x)=L_t(A x)` holds to **~2e-4** (an order of magnitude tighter than
   CT — the antialias `B_aa` at `σ=s` suppresses the aliasing; a light `σ=0.5s` leaks ~3.5e-2 and
-  avg-pool alone ~40%). `scripts/sr_demo.py` reconstructs FFHQ-256 faces from ×4 LR (64px) reusing
+  avg-pool alone ~40%). `scripts/sr.py demo` reconstructs FFHQ-256 faces from ×4 LR (64px) reusing
   the motion-CG data step verbatim (target `L_{t-1} y` in LR space, `‖A‖=1` normalized): n=4,
   σ_y=0.01 → **bicubic 23.17 → SMDC+IHDM 26.80 dB** (SSIM 0.72). Baselines on the *same* operator +
-  observation (`scripts/sr_baselines.py`, `figure_sr_compare.png`): **DPS 22.14 dB / LPIPS 0.228**
+  observation (`scripts/sr.py baselines`, `figure_sr_compare.png`): **DPS 22.14 dB / LPIPS 0.228**
   (wins perception, hallucinates off-GT), **TV+CG 26.80 / SSIM 0.771** (ties SMDC on PSNR). Unlike
   deblur, SMDC does not lead here — ×4 SR w/ strong antialias is a mild, TV-friendly problem; SR
   validates the framework rather than showcasing the learned prior (de-speckling SMDC is the open lever).
@@ -97,7 +97,7 @@ Per-modality plan and the acceptance gate each needs:
   radial via NUFFT (adjoint = gridding, VJP). Resolve the eigenbasis (§4) before starting.
 
 Each modality is a self-contained `results/<modality>/` dir + a `make_<modality>_obs.py`
-generator; restoration reuses `scripts/restore_motion_cg.py` with the new operator.
+generator; restoration reuses `scripts/deblur.py restore --operator motion` with the new operator.
 
 ---
 

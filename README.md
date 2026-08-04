@@ -18,12 +18,12 @@ MAP (see `docs/methods_comparison.md` for the full derivation).
 model/       cold_diffusion.py · ihdm.py · dps.py · unet.py · base.py   + ihdm_backbone/ dps_backbone/
 solver/      base.py (restoration loop) · smdc↔base · hqs.py · weighting.py · step.py · init.py · dps.py
 ops/         dct.py · transforms.py · operators.py · spectral.py · heat.py (Kₜ,Lₜ) · deblur.py (A)
-utils/       metrics.py · logging.py · seed.py
+utils/       metrics.py · logging.py · seed.py · pipeline.py (shared IO/prior/‖A‖=1/CG/freq-reg/metrics)
 data/        celebahq256/ · ffhq256/ · celeba_hq_resized/ · celeba128_test/ + loaders.py
 checkpoint/  cold_diffusion/{celebahq128,ffhq256}.pth · ihdm/ffhq128.pth · dps/ffhq_10m.pt
 results/     dps_vs_smdc/ · smdc_vs_ihdm_hqs/ (recons, figures, logs)
 docs/        MATH.md · TASK.md · methods_comparison.md · EXPERIMENTS.md · ...
-scripts/     restore.py · run_dps.py · make_shared_obs.py · make_figure.py · compare_grid.py · train_prior.py · run_tests.py
+scripts/     deblur.py (obs·restore·freqreg·noise, --operator gaussian|motion|defocus) · sr.py · ct.py · run_dps.py · run_tv_hqs.py · make_figure.py · train_prior.py · run_tests.py
 tests/       gates.py (adjoint / intertwining / limits / gradient / noise-cov / plumbing)
 configs/
 ```
@@ -34,11 +34,10 @@ conda activate base
 # 1. numerical gates (no model)
 python scripts/run_tests.py
 # 2. make a shared held-out test set (clean + heat-blur observation)
-python scripts/make_shared_obs.py --source celebahq --out results/demo --n 8 --image_size 128 --blur_sigma 4 --noise 0.05
-# 3. restore:  prior x solver
-python scripts/restore.py --prior ihdm --solver hqs  --clean_dir results/demo/clean --observation_dir results/demo/observation
-python scripts/restore.py --prior ihdm --solver smdc --clean_dir results/demo/clean --observation_dir results/demo/observation
-python scripts/restore.py --prior cold_diffusion --ckpt checkpoint/cold_diffusion/ffhq256.pth --image_size 256 \
+python scripts/deblur.py obs --operator gaussian --source celebahq --out results/demo --n 8 --image_size 128 --blur_sigma 4 --noise 0.05
+# 3. restore:  prior x per-step MAP (--operator picks the degradation)
+python scripts/deblur.py restore --operator gaussian --prior ihdm --clean_dir results/demo/clean --observation_dir results/demo/observation
+python scripts/deblur.py restore --operator gaussian --prior cold_diffusion --ckpt checkpoint/cold_diffusion/ffhq256.pth --image_size 256 \
        --ch 128 --ch_mult 1 1 2 2 4 --clean_dir results/demo/clean --observation_dir results/demo/observation
 # 4. DPS baseline (hot, spare)
 python scripts/run_dps.py --clean_dir results/demo/clean --observation_dir results/demo/observation --save_dir results/demo/dps

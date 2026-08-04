@@ -27,3 +27,4 @@ hf_token.txt
 *.gz
 !./data/loaders.py
 !./data/__init__.py
+ddrm_backbone/

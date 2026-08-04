@@ -86,7 +86,7 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
   values vanish): a DCT-diagonal prior-precision boost `r(f)=γ·w_p·(1−|â|/|â₀|)₊`, i.e. `w_p→w_p+r(f)`
   in the MAP — zero in the passband, large in A's weak/null band; flattens the peak, leaves the
   well-measured low band untouched. **Productionized:** `MAPCorrection` (`solver/hqs.py`, default
-  γ=0.5), `--freq_reg` in `restore.py`/`defocus_hqs.py`; sweeps `scripts/{sr,deblur}_freqreg_sweep.py`
+  γ=0.5), `--freq_reg` in `deblur.py restore`; sweeps `scripts/sr.py freqreg` / `scripts/deblur.py freqreg`
   (â via analytic transfer / `SuperResolution.transfer_profile` / Hutchinson diag(AᵀA)); report
   §"Frequency-aware regularization" (`hqs_report.tex`, eqs. noisegain/reg/wienerreg, compiles).
   **Optimal γ tracks null-space dominance:**
@@ -116,7 +116,7 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
   aliased forward model is forced. Ref logged in memory `[[deblur-inr-crossscale]]`.
 
 - **2026-08-03 — Noise-injection test (deblur, IHDM-256).** Optional per-step noise *after* the MAP
-  data step, skipped on the last step (`solver/base.py`, `scripts/deblur_noise_sweep.py`; default off,
+  data step, skipped on the last step (`solver/base.py`, `scripts/deblur.py noise`; default off,
   `ns=0` ≡ deterministic 27.65 dB). **Annealed** (std=ns·t/N): benign for ns≲0.05 (LPIPS 0.358→0.349,
   PSNR flat), hard cliff to ~9 dB above. **Const**: collapses at ns=0.05, but **const ns=0.01 (=σ_path)
   is stable and inert** (27.65 dB). Crux: the in-distribution level (≈σ_path) does nothing, anything
@@ -128,8 +128,8 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
   on the LR half-sample grid center, vs strided `::s` which hits the corner and breaks intertwining
   5–14% for even s). Companion `L_t` = LR-grid heat blur, `σ_t/s` (`lr_heat_schedule`). Adjoint = VJP.
   Gates: SR adjoint 2.2e-15, **SR intertwining 2.5e-4** (tighter than CT; controlled by aa: σ=s→2e-4,
-  0.5s→3.5e-2, none→~40%). PoC `scripts/sr_demo.py` (×4, reuses motion-CG, ‖A‖=1): **bicubic 23.17 →
-  SMDC 26.80 dB**. Baselines (same op+obs, `scripts/sr_baselines.py`): DPS 22.14 / LPIPS **0.228**;
+  0.5s→3.5e-2, none→~40%). PoC `scripts/sr.py demo` (×4, reuses motion-CG, ‖A‖=1): **bicubic 23.17 →
+  SMDC 26.80 dB**. Baselines (same op+obs, `scripts/sr.py baselines`): DPS 22.14 / LPIPS **0.228**;
   TV+CG **26.80** / SSIM **0.771**; SMDC 26.80 / 0.720 / 0.472. SMDC ties (not beats) TV here — ×4 SR
   w/ strong antialias is a mild, TV-friendly problem; SMDC's residual grain (transition-band *noise* amplification — see the freq-reg entry above;
   removed by γ≈4) costs SSIM/LPIPS at γ=0.
@@ -137,7 +137,7 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 - **2026-07-31 — CT modality (parallel-beam Radon; PoC done, tuning open).** Companion is **not**
   `L_t=K_t`: Fourier-slice gives `R(K_t x)=L_t(R x)`, `L_t` = 1-D detector-axis heat blur
   (`ops/ct.py`). Gates: CT adjoint 1.5e-14; intertwining discretization-limited (0.2% fine / 4.5%
-  coarse @256, tighter with resolution). `scripts/ct_demo.py` (180-view, ‖R‖=1) recovers recognizable
+  coarse @256, tighter with resolution). `scripts/ct.py` (180-view, ‖R‖=1) recovers recognizable
   faces (15.5 dB / SSIM 0.64). Open (tuning): out-of-FOV corner streaks, RGB color fringing, ramp/FBP
   preconditioning of the low-pass RᵀR.
 
@@ -151,7 +151,7 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
   border, so use spatial CG (reflect A, exact autograd adjoint, no FFT). Best full-frame at every noise:
   **29.74 / 28.40 / 26.78 dB** @ σ_y 0.05/0.10/0.20, 3–5 dB over TV/DPS. Commutation ≈1e-3 under reflect
   (boundary-localized). Boundary ablation: interior ≈31 dB for all 8 combos (border-only effect).
-  Tools: `ops/motion_spatial.py`, `scripts/restore_motion_cg.py`.
+  Tools: `ops/motion_spatial.py`, `scripts/deblur.py restore --operator motion`.
 
 - **2026-07-25 — SMDC 1-step gradient vs IHDM-HQS MAP** (CelebA-128): MAP **25.39 / 0.818 / 0.182** wins
   all (DCT-diagonal A ⇒ closed-form MAP = same per-step cost; gradient degrades with inner steps).

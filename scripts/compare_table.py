@@ -18,20 +18,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 import torch
-from PIL import Image
 
 from ops.transforms import DCTTransform
 from ops.deblur import build_deblur
 from utils.metrics import psnr, ssim, lpips_metric, measurement_consistency
-
-
-def load(d, n=None):
-    paths = sorted(glob.glob(os.path.join(d, "*.png")))
-    if n:
-        paths = paths[:n]
-    xs = [torch.from_numpy(np.asarray(Image.open(p).convert("RGB"), dtype=np.float32))
-          .permute(2, 0, 1) / 127.5 - 1.0 for p in paths]
-    return torch.stack(xs)
+from utils.pipeline import load_dir as load
 
 
 def main():
