@@ -12,6 +12,7 @@ from ops.transforms import DCTTransform
 from ops.heat import HeatSchedule
 from ops.deblur import build_deblur
 from ops.ct import ParallelBeamRadon, DetectorHeatBlur
+from ops.superres import SuperResolution, lr_heat_schedule, sr_scale_matched_target
 
 
 @dataclass
@@ -108,9 +109,63 @@ def gate_intertwining_ct(H=96, n_angles=140, dtype=torch.float64) -> GateResult:
     return GateResult("CT intertwining R K_t=L_t R (fine)", rel, 6e-2, rel < 6e-2)
 
 
+def gate_sr_adjoint(H=64, scale=2, dtype=torch.float64) -> GateResult:
+    """SR forward A = avg_pool_s . B_aa has an exact autograd-VJP adjoint (ops/superres.py):
+    <A x, y> = <x, A^T y>."""
+    A = SuperResolution(scale, H, channels=1, dtype=dtype)
+    g = torch.Generator().manual_seed(0)
+    x = torch.randn(1, 1, H, H, generator=g, dtype=dtype)
+    y = torch.randn(1, 1, H // scale, H // scale, generator=g, dtype=dtype)
+    lhs = (A.forward(x) * y).sum().item()
+    rhs = (x * A.adjoint(y)).sum().item()
+    rel = abs(lhs - rhs) / max(1.0, abs(rhs))
+    return GateResult("SR adjoint <Ax,y>=<x,A^Ty>", rel, 1e-9, rel < 1e-9)
+
+
+def gate_intertwining_sr(H=64, scale=2, dtype=torch.float64) -> GateResult:
+    """SR intertwining  A(K_t x) = L_t(A x)  with L_t = LR-grid heat blur (sigma_t/s). Decimating
+    an isotropically heat-blurred image equals heat-blurring the decimated image on the LR grid.
+    Because the antialias B_aa commutes with K_t exactly (shared DCT basis) and avg-pool lands on
+    the LR half-sample grid, the only residual is the aliasing B_aa suppresses -- ~2e-4 here, far
+    tighter than CT's few percent (see EXPERIMENTS)."""
+    tf = DCTTransform()
+    sch = HeatSchedule.ihdm(H, H, K=40, sigma_min=0.5, sigma_max=16.0, transform=tf, dtype=dtype)
+    A = SuperResolution(scale, H, channels=1, dtype=dtype)
+    lr = lr_heat_schedule(sch, scale)
+    g = torch.Generator().manual_seed(1)
+    x = torch.randn(1, 1, H, H, generator=g, dtype=dtype)
+    worst = 0.0
+    for i in range(1, sch.num_levels, max(1, sch.num_levels // 8)):
+        lhs = A.forward(sch.apply_K(x, i))     # A K_t x  (HR blur then decimate)
+        rhs = lr.apply_K(A.forward(x), i)      # L_t A x  (decimate then LR heat blur)
+        worst = max(worst, (lhs - rhs).norm().item() / max(1e-12, rhs.norm().item()))
+    return GateResult("SR intertwining A K_t=L_t A", worst, 1e-3, worst < 1e-3)
+
+
+def gate_sr_intertwining_exact(H=64, scale=2, dtype=torch.float64) -> GateResult:
+    """The QMF alias correction (Deblur-INR Prop. 1; ops/superres.py sr_scale_matched_target with
+    x_hr) makes the SR data target exact for ANY decimation/antialias. Uses STRIDED decimation with
+    no antialias -- the WORST case, where the plain target L_t(A x) is ~8% off -- and checks the
+    corrected target L_t(A x)+Delta_t(x0) equals A(K_t x0) to machine precision (oracle x_hr=x0)."""
+    tf = DCTTransform()
+    sch = HeatSchedule.ihdm(H, H, K=40, sigma_min=0.5, sigma_max=16.0, transform=tf, dtype=dtype)
+    A = SuperResolution(scale, H, channels=1, aa_sigma=1e-6, decimation="stride", dtype=dtype)
+    lr = lr_heat_schedule(sch, scale)
+    g = torch.Generator().manual_seed(1)
+    x0 = torch.randn(1, 1, H, H, generator=g, dtype=dtype)
+    y = A.forward(x0)
+    worst = 0.0
+    for i in range(1, sch.num_levels, max(1, sch.num_levels // 8)):
+        truth = A.forward(sch.apply_K(x0, i))                        # A(K_t x0)
+        b = sr_scale_matched_target(A, sch, lr, i, y, x_hr=x0)       # L_t y + Delta_t(x0)
+        worst = max(worst, (b - truth).norm().item() / max(1e-12, truth.norm().item()))
+    return GateResult("SR intertwining exact (QMF corr.)", worst, 1e-9, worst < 1e-9)
+
+
 ALL_GATES = [
     gate_adjoint, gate_intertwining, gate_limits, gate_noise_cov,
     gate_ct_adjoint, gate_intertwining_ct,
+    gate_sr_adjoint, gate_intertwining_sr, gate_sr_intertwining_exact,
 ]
 
 

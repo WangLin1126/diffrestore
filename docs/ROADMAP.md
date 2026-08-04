@@ -1,10 +1,10 @@
 # Roadmap — extending Scale-Matched Data Consistency (SMDC)
 
-Status baseline (2026-07-31): Gaussian deblur (IHDM+HQS, DCT-exact), motion deblur
-(IHDM+CG, reflect-boundary `R+R+R`), and **defocus deblur** (IHDM+HQS, closed-form
-DCT-Wiener, three noise levels) complete and in `docs/hqs_report.tex`. This document
-plans the next phase: more degradation models, a stronger backbone, and a Blurring-Diffusion
-upgrade of the heat framework.
+Status baseline (2026-08-03): Gaussian deblur (IHDM+HQS, DCT-exact), motion deblur
+(IHDM+CG, reflect-boundary `R+R+R`), **defocus deblur** (IHDM+HQS, closed-form DCT-Wiener,
+three noise levels), and **super-resolution** (IHDM+CG, LR-grid heat companion, ×4 PoC)
+complete; CT operator+gates+PoC done (tuning open). This document plans the next phase: more
+degradation models, a stronger backbone, and a Blurring-Diffusion upgrade of the heat framework.
 
 **Solver-alignment principle (established 2026-07-31).** For each degradation mode, TV,
 cold, and IHDM all use the *same* data-consistency solver, chosen by the operator's symmetry:
@@ -36,7 +36,7 @@ single question sorts the modality list:
 | Motion deblur ✅ | motion conv | `L_t = K_t` | ~1e-3 (reflect) | done (reflect-CG) |
 | Defocus deblur ✅ | disk/pillbox conv | `L_t = K_t` | exact (circular) / ~1e-15 (DCT-diagonal) | **done (closed-form DCT-HQS)** |
 | CT ◐ | Radon `R` | **1D heat blur along detector axis** | continuum-exact; ~0.2% fine / 4.5% coarse @256 (discrete) | **operator+gate+PoC done; tuning open** |
-| **Super-res** ×s | blur ∘ downsample | heat blur on the **LR grid** (coarse `K_t`) | exact up to aliasing (small) | easy + aliasing gate |
+| Super-res ✅ | blur ∘ downsample | heat blur on the **LR grid** (`σ_t/s`) | ~2e-4 (avg-pool decimation) | **done (operator+gate+PoC)** |
 | **MRI** | mask ∘ `F` | k-space multiply by `g_t` on sampled lines | **exact iff prior uses DFT/periodic heat** (not DCT) | basis decision first |
 
 **Why CT is exact:** blurring the image by an isotropic Gaussian then projecting equals
@@ -77,9 +77,22 @@ Per-modality plan and the acceptance gate each needs:
   **Open (tuning, not plumbing):** inscribed-disk FOV / proper phantoms (faces fill the frame),
   grayscale vs per-channel color, and a ramp/FBP-preconditioned data step (unfiltered `RᵀR` is
   low-pass). See EXPERIMENTS 2026-07-31.
-- **Super-res** — `A = B_antialias ∘ D_s`; adjoint = `Dᵀ ∘ Bᵀ` (upsample-zero then blurᵀ),
-  free via VJP. `L_t` = heat blur on the LR grid. New gate `gate_intertwining_sr` to quantify
-  the aliasing residual `D(K_t x)` vs `K_t^LR(D x)`.
+- **Super-res** ✅ *(done, 2026-08-03)* — `ops/superres.py`: `SuperResolution` (`A = D_s ∘ B_aa`,
+  antialias Gaussian blur built in the shared DCT basis so it commutes with `K_t` *exactly*, then
+  **area/avg-pool decimation** — avg-pool samples the LR half-sample-symmetric grid *center*, so it
+  is the DCT-II-consistent decimation; plain strided `::s` samples the corner and injects a
+  `(s-1)/2`-px phase error that breaks the intertwining by 5–14% for even `s`). Adjoint = exact
+  autograd VJP (`<Ax,y>=<x,Aᵀy>` to ~2e-15). Companion `L_t` = LR-grid heat blur (`σ_t/s`,
+  `lr_heat_schedule`). Gates `gate_sr_adjoint` + `gate_intertwining_sr` in `tests/gates.py`: the
+  decimation intertwining `A(K_t x)=L_t(A x)` holds to **~2e-4** (an order of magnitude tighter than
+  CT — the antialias `B_aa` at `σ=s` suppresses the aliasing; a light `σ=0.5s` leaks ~3.5e-2 and
+  avg-pool alone ~40%). `scripts/sr_demo.py` reconstructs FFHQ-256 faces from ×4 LR (64px) reusing
+  the motion-CG data step verbatim (target `L_{t-1} y` in LR space, `‖A‖=1` normalized): n=4,
+  σ_y=0.01 → **bicubic 23.17 → SMDC+IHDM 26.80 dB** (SSIM 0.72). Baselines on the *same* operator +
+  observation (`scripts/sr_baselines.py`, `figure_sr_compare.png`): **DPS 22.14 dB / LPIPS 0.228**
+  (wins perception, hallucinates off-GT), **TV+CG 26.80 / SSIM 0.771** (ties SMDC on PSNR). Unlike
+  deblur, SMDC does not lead here — ×4 SR w/ strong antialias is a mild, TV-friendly problem; SR
+  validates the framework rather than showcasing the learned prior (de-speckling SMDC is the open lever).
 - **MRI** — `A = M ∘ F`; Cartesian first (`L_t` = multiply sampled k-space by `g_t`), then
   radial via NUFFT (adjoint = gridding, VJP). Resolve the eigenbasis (§4) before starting.
 
@@ -143,7 +156,8 @@ Since both §2 (transformer) and §3 (BDM) force a retrain, that retrain is the 
 2. **CT** ◐ — operator, both gates, and an end-to-end PoC done (recognizable faces from 180
    views); remaining work is CT-specific tuning (disk FOV / phantoms, grayscale, ramp-preconditioned
    data step). *(core validated)*
-3. **Super-res** — `L_t` = LR-grid heat blur + aliasing gate.
+3. **Super-res** ✅ — `L_t` = LR-grid heat blur (`σ_t/s`); avg-pool decimation makes the
+   intertwining ~2e-4; ×4 FFHQ PoC beats bicubic by +3.5 dB. *(complete)*
 4. **MRI** — after the eigenbasis decision (§4); Cartesian → radial.
 5. **BDM upgrade (§3)** — retrain here; subsumes the whitening fix.
 6. **Transformer backbone (§2)** — fold into the BDM retrain.

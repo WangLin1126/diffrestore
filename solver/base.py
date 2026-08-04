@@ -29,7 +29,16 @@ def scale_matched_solver(
     rng=None,
     x0_ref: Optional[torch.Tensor] = None,
     scale_match: bool = True,
+    noise_scale: float = 0.0,
+    noise_kind: str = "anneal",
 ) -> torch.Tensor:
+    """noise_scale>0 injects small white noise *after* the per-step data-consistency step
+    (turning the deterministic reverse into a stochastic one), never on the final step (t_next==0),
+    so the returned image carries no added noise. The per-step std is
+        std = noise_scale * w(t_next),   w = t_next/N ("anneal") | sigma_{t_next}/sigma_max ("sigma")
+              | 1 ("const"),
+    so "anneal"/"sigma" fade the noise out toward fine scales. noise_scale=0 == the original
+    deterministic solver."""
     if len(times) < 2:
         raise ValueError("need >= 2 levels")
     if any(times[i] <= times[i + 1] for i in range(len(times) - 1)):
@@ -37,6 +46,8 @@ def scale_matched_solver(
     if int(times[-1]) != 0:
         raise ValueError("final level must be 0")
 
+    N = max(int(times[0]), 1)
+    sig_max = float(schedule.sigmas.max().item())
     x = x_init
     for step, (t, t_next) in enumerate(zip(times[:-1], times[1:])):
         with torch.no_grad():
@@ -51,6 +62,22 @@ def scale_matched_solver(
             if clamp is not None:
                 x_corr = x_corr.clamp(clamp[0], clamp[1])
             x = x_corr
+
+            # optional stochastic reverse: small noise AFTER data consistency, not on the last step
+            if noise_scale > 0.0 and int(t_next) > 0:
+                if noise_kind == "anneal":
+                    w = float(t_next) / N
+                elif noise_kind == "sigma":
+                    w = float(schedule.sigmas[int(t_next)].item()) / max(sig_max, 1e-12)
+                elif noise_kind == "const":
+                    w = 1.0
+                else:
+                    raise ValueError(f"unknown noise_kind {noise_kind}")
+                eps = torch.randn(x.shape, generator=rng, device=x.device, dtype=x.dtype) \
+                    if rng is not None else torch.randn_like(x)
+                x = x + noise_scale * w * eps
+                if clamp is not None:
+                    x = x.clamp(clamp[0], clamp[1])
 
         if logger is not None:
             sc = float("nan")

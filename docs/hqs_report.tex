@@ -93,7 +93,7 @@ $\delta^2$ around $\bmu_{t-1}$ and the Gaussian likelihood~\eqref{eq:model},
 \x_{t-1} \;=\; \argmin_{\x}\;
 \underbrace{\frac{1}{2\delta^2}\,\|\x-\bmu_{t-1}\|^2}_{\text{prior proximal}}
 \;+\;
-\underbrace{\frac{1}{2\sigma_y^2}\,\|\A\x-\y_{t-1}\|^2}_{\text{data consistency}} .
+\underbrace{\frac{1}{2\sigma_y^2}\,\|\A\x-\K_{t-1}y\|^2}_{\text{data consistency}} .
 \label{eq:map}
 \end{equation}
 Substituting a \emph{classical} denoiser for that prox---e.g.\ a total-variation (Chambolle) step---recovers standard
@@ -143,6 +143,52 @@ the estimate falls back to the prior $\hat{\bmu}[j]$, while at well-conditioned
 frequencies it follows the data. The linear ramp in~\eqref{eq:weights} realizes the
 ``late'' schedule. No gradient is taken through
 $R_\theta$; the network is used only as the prior-proximal map producing $\bmu_{t-1}$.
+
+\paragraph{Frequency-aware regularization (speckle control).}
+The Wiener filter~\eqref{eq:wiener} amplifies measurement noise most where the operator is
+weakest. Its per-frequency noise gain is
+\begin{equation}
+g_{\mathrm{n}}[j]=\frac{w_y\,\lvert\hat a[j]\rvert\,\sigma_y}{w_p+w_y\,\lvert\hat a[j]\rvert^{2}},
+\label{eq:noisegain}
+\end{equation}
+which peaks at $\lvert\hat a[j]\rvert=\sqrt{w_p/w_y}$ with height $\tfrac12\sigma_y\sqrt{w_y/w_p}$.
+Because we up-weight data as $w_y\!\propto\!1/\sigma_y^{2}$, this peak is essentially
+\emph{independent of $\sigma_y$}: even at small noise it injects a fixed-amplitude, structured
+high-frequency ripple---visible as \emph{speckle}, and most severe when $\A$ has a genuine null
+space (e.g.\ the anti-aliased downsampling of super-resolution, whose transfer vanishes above the
+low-resolution Nyquist).
+
+We suppress it by making the prior precision frequency-dependent: add a DCT-diagonal operator
+$\mathbf R=\Phimat^{-1}\operatorname{diag}\!\bigl(r[j]\bigr)\Phimat$ to the prior proximal,
+\begin{equation}
+\x_{t-1}=\argmin_{\x}\;\tfrac12\bigl(\x-\bmu_{t-1}\bigr)^{\!\top}\!\bigl(w_p\I+\mathbf R\bigr)\bigl(\x-\bmu_{t-1}\bigr)
+\;+\;\frac{1}{2\sigma_y^2}\bigl\|\A\x-\K_{t-1}\y\bigr\|^{2},
+\quad
+r[j]=\gamma\,w_p\Bigl(1-\tfrac{\lvert\hat a[j]\rvert}{\lvert\hat a[0]\rvert}\Bigr)_{\!+},
+\label{eq:reg}
+\end{equation}
+with $(\cdot)_+=\max(\cdot,0)$. The weight $r[j]$ is zero in the pass band
+($\lvert\hat a[j]\rvert\!\approx\!\lvert\hat a[0]\rvert$) and rises to $\gamma w_p$ where the operator
+is blind ($\hat a[j]\!\to\!0$): it trusts the prior exactly where the measurement carries no
+information---the range/null-space split of DDRM. The minimizer keeps the closed
+form~\eqref{eq:wiener} with $w_p\!\mapsto\!w_p+r[j]$,
+\begin{equation}
+\boxed{\;
+\hat{\x}_{t-1}[j]
+=\frac{\bigl(w_p+r[j]\bigr)\,\hat{\bmu}_{t-1}[j]\;+\;w_y(t)\,\overline{\hat a[j]}\;\widehat{(\K_{t-1}\y)}[j]}
+       {w_p+r[j]\;+\;w_y(t)\,\lvert\hat a[j]\rvert^{2}} .
+\;}
+\label{eq:wienerreg}
+\end{equation}
+Adding $r[j]$ to the denominator flattens the noise-gain peak~\eqref{eq:noisegain} in the weak band
+while leaving the well-measured low frequencies ($r\!\approx\!0$) untouched. For non-diagonal $\A$
+the same term enters the spatial CG system as
+$\bigl(w_p\I+\mathbf R+w_y\mathbf H^{\!\top}\mathbf H\bigr)\x=\bigl(w_p\I+\mathbf R\bigr)\bmu_{t-1}+w_y\mathbf H^{\!\top}\y_{t-1}$,
+with $\lvert\hat a[j]\rvert^{2}$ taken from a Hutchinson estimate of
+$\operatorname{diag}(\A^{\!\top}\A)$ in the DCT basis. Setting $\gamma\!=\!0$
+recovers~\eqref{eq:wiener}; we use $\gamma\!=\!0.5$ by default for deblur (a small, near
+distortion-free speckle clean), while null-space operators such as super-resolution benefit from a
+larger $\gamma$.
 
 \paragraph{Basis selection and the boundary question.}
 For Gaussian/heat $\A$, $\Phimat=$ DCT and $\hat a$ is real, so $\A$ shares the prior's

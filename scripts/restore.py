@@ -98,6 +98,11 @@ def main():
     ap.add_argument("--prior_weight", type=float, default=1.0)
     ap.add_argument("--data_weight", type=float, default=64.0)
     ap.add_argument("--map_schedule", choices=["late", "const"], default="late")
+    ap.add_argument("--freq_reg", type=float, default=0.5,
+                    help="frequency-aware prior-precision boost gamma (0 = plain MAP; 0.5 default)")
+    # stochastic reverse: small noise injected AFTER the data-consistency step (0 = deterministic)
+    ap.add_argument("--noise_scale", type=float, default=0.0)
+    ap.add_argument("--noise_kind", choices=["anneal", "sigma", "const"], default="anneal")
     args = ap.parse_args()
 
     set_seed(args.seed)
@@ -110,7 +115,7 @@ def main():
     times = list(range(sch.num_levels - 1, -1, -1))
     corrector = MAPCorrection(sch, gA, delta=args.delta, sigma_y=args.sigma_y,
                               prior_weight=args.prior_weight, data_weight=args.data_weight,
-                              schedule_kind=args.map_schedule)
+                              schedule_kind=args.map_schedule, freq_reg=args.freq_reg)
     print(f"  prior={args.prior} solver={args.solver} res={H} K={sch.num_levels-1}")
 
     x0 = load_png_stack(args.clean_dir, H, args.n).to(device)
@@ -120,7 +125,8 @@ def main():
         xi, y = x0[k:k + 1], ys[k:k + 1]
         x_init = terminal_init("matched_measurement", y, sch, times[0])
         x_hat = scale_matched_solver(y, x_init, times, A, sch, prior, corrector,
-                                     clamp=(-1, 1), logger=RunLogger(verbose=False), x0_ref=xi)
+                                     clamp=(-1, 1), logger=RunLogger(verbose=False), x0_ref=xi,
+                                     noise_scale=args.noise_scale, noise_kind=args.noise_kind)
         save_image((x_hat[0].clamp(-1, 1) + 1) / 2, os.path.join(args.out, "recon", f"{k:05d}.png"))
         S["in"].append(psnr(y, xi)); S["out"].append(psnr(x_hat, xi)); S["ssim"].append(ssim(x_hat, xi))
         S["lpips"].append(lpips_metric(x_hat, xi, device)); S["mc"].append(measurement_consistency(y, A, x_hat))

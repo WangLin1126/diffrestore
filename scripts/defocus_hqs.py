@@ -88,6 +88,8 @@ def main():
     ap.add_argument("--delta", type=float, default=0.01)
     ap.add_argument("--prior_weight", type=float, default=1.0)
     ap.add_argument("--data_weight", type=float, default=64.0)
+    ap.add_argument("--freq_reg", type=float, default=0.5,
+                    help="frequency-aware prior-precision boost gamma (0 = plain MAP; 0.5 default)")
     ap.add_argument("--n", type=int, default=16)
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", default="cuda:0")
@@ -101,7 +103,8 @@ def main():
     a_hat, diag_err = dct_transfer(k, H, tf, device)
     A = SpectralOperator(a_hat, tf)
     corr = MAPCorrection(sch, a_hat, delta=args.delta, sigma_y=args.sigma_y,
-                         prior_weight=args.prior_weight, data_weight=args.data_weight, schedule_kind="late")
+                         prior_weight=args.prior_weight, data_weight=args.data_weight,
+                         schedule_kind="late", freq_reg=args.freq_reg)
     times = list(range(sch.num_levels - 1, -1, -1))
     print(f"  DEFOCUS-HQS(DCT closed-form) prior={args.prior} res={H} kernel={tuple(k.shape)} "
           f"DCT-diagonalization err={diag_err:.2e}", flush=True)
