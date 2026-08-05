@@ -264,6 +264,12 @@ def _add_common(p):
     p.add_argument("--device", default="cuda:0")
 
 
+def _add_sr_operator(p):
+    p.add_argument("--aa_sigma", type=float, default=None,
+                   help="antialias std (HR px); default=scale. Set 0 for pure (box avg-pool) downsample.")
+    p.add_argument("--decimation", choices=["avgpool", "stride"], default="avgpool")
+
+
 def _add_prior(p):
     p.add_argument("--prior", choices=["ihdm", "cold_diffusion"], default="ihdm")
     p.add_argument("--ckpt", default="checkpoint/ihdm/ihdm_ffhq256_full.pth")
@@ -279,9 +285,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     pd = sub.add_parser("demo", help="SMDC + IHDM reconstruction + figure (+ shared clean/observation)")
-    _add_common(pd); _add_prior(pd)
-    pd.add_argument("--aa_sigma", type=float, default=None, help="antialias std (HR px); default=scale")
-    pd.add_argument("--decimation", choices=["avgpool", "stride"], default="avgpool")
+    _add_common(pd); _add_prior(pd); _add_sr_operator(pd)
     pd.add_argument("--exact_intertwine", action="store_true",
                     help="add the QMF alias correction to the data target (plug-in: current prior mean)")
     pd.add_argument("--sigma_y", type=float, default=0.01, help="LR noise std (relative, x |y|.mean())")
@@ -311,9 +315,7 @@ def main():
                     help="interpret --sigmas as absolute Gaussian std on the physical [-1,1] LR "
                          "(DDRM/DPS convention) instead of our relative std (sigma*mean|y|)")
     pf.add_argument("--regs", type=float, nargs="+", default=[0.0, 16.0, 64.0])
-    pf.add_argument("--aa_sigma", type=float, default=None,
-                    help="antialias std (HR px); default=scale. Set 0 for pure (box avg-pool) downsample.")
-    pf.add_argument("--decimation", choices=["avgpool", "stride"], default="avgpool")
+    _add_sr_operator(pf)
     pf.add_argument("--out", default="results/sr_freqreg")
     pf.add_argument("--seed", type=int, default=0)
     pf.set_defaults(func=cmd_freqreg)

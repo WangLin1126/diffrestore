@@ -77,6 +77,21 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 
 ## 9. Chronological log (newest first)
 
+- **2026-08-05 — Why optimal γ moves with noise in *opposite* directions for SR vs motion (transfer-profile
+  mechanism).** The plain data step's noise gain `g_n[j]=w_y|â|σ_y/(w_p+w_y|â|²)` peaks over frequency at
+  `|â|*=√(w_p/w_y)∝σ_y`; for a *fixed* weak frequency of gain ε it peaks over noise at **σ*∝ε** — each
+  near-null frequency rings loudest at a noise level set by its own gain. So the sign of dγ*/dσ_y is set by
+  the *shape* of `|â|` near its zeros (fig `docs/figures/transfer_profiles.png`, `transfer_profile` +
+  |OTF| of the saved kernels): **box-SR** is a contiguous cutoff — Dirichlet sinc with active sidelobes,
+  zeros at f=0.25/0.50/0.75 (verified); its true null is inert (prior-filled), the smallest *active* gain
+  is the moderate transition floor, so it goes noise-dominated only as σ_y grows → **γ* grows with σ_y**
+  (0→4 as 0.01→0.05). **Motion** (Levin09 #1) stays O(1) to high freq but has *isolated deep notches*
+  (f≈0.20/0.47/0.64), ε→0 → σ*→0, and w_y∝1/σ_y² is largest at low noise → **γ* grows as σ_y↓**.
+  **Gaussian/defocus/anti-alias-SR** are smooth roll-offs with no active near-zero band → g_n peak has no
+  spectral mass → reg useless at every noise (the anti-alias Gaussian is exactly what smooths box-SR's
+  sidelobes away). Unifies the reg-ablation table under one law: optimal γ tracks how much *active*
+  transition/notch mass the operator has where the noise-gain peak currently sits.
+
 - **2026-08-05 — Pure box-downsample SR + DDRM head-to-head (added to `hqs_report.tex` Table `tab:sr`).**
   Added the *pure* box downsample (avg-pool, `aa_sigma=0`) — DDRM's native `sr4` — alongside the
   anti-alias operator, both methods, σ_y∈{0.01,0.05}, n=16. New `--aa_sigma`/`--decimation` flags on
