@@ -181,7 +181,8 @@ def cmd_freqreg(args):
     tf = DCTTransform()
     prior, sch, H = P.build_prior(args, tf, dev)
     lr_sch = lr_heat_schedule(sch, s); N = sch.num_levels - 1
-    A_raw = SuperResolution(s, H, channels=3, device=dev, dtype=dt)
+    A_raw = SuperResolution(s, H, channels=3, aa_sigma=args.aa_sigma,
+                            decimation=args.decimation, device=dev, dtype=dt)
     A, lam = P.normalize_operator(A_raw, H, dev, dt)
 
     one_minus_an = (1.0 - A_raw.transfer_profile()).clamp_min(0.0)
@@ -194,7 +195,11 @@ def cmd_freqreg(args):
     print("-" * 46)
 
     for sy in args.sigmas:
-        sig_w = max(sy, 0.01)
+        # --abs_noise: sy is an absolute Gaussian std on the physical [-1,1] LR (DDRM/DPS
+        # convention). The loop works on the ||A||=1-normalized measurement, so that same noise is
+        # (sy/lam)*randn there and the calibrated data-term noise level is sig_w = sy/lam. Without
+        # the flag sy is our relative std (sy*mean|y|), sig_w = sy (floored at 0.01).
+        sig_w = max(sy / lam, 1e-4) if args.abs_noise else max(sy, 0.01)
         wy0 = args.data_weight / sig_w ** 2
         for gamma in args.regs:
             reg = P.make_freq_reg(one_minus_an, gamma, wp)
@@ -203,7 +208,8 @@ def cmd_freqreg(args):
                 torch.manual_seed(args.seed + k)                   # same noise draw across gamma
                 with torch.no_grad():
                     y = A.forward(x0)
-                    if sy > 0: y = y + sy * y.abs().mean() * torch.randn_like(y)
+                    if sy > 0:
+                        y = y + (sy / lam if args.abs_noise else sy * y.abs().mean()) * torch.randn_like(y)
                     x_init = sch.apply_K(F.interpolate(y * lam, size=(H, H), mode="bicubic",
                                                        align_corners=False), times[0]).clamp(-1, 1)
                     x = P.smdc_cg(A, prior, lambda tn, mu: lr_sch.apply_K(y, tn), times, wp, wy0, N,
@@ -301,7 +307,13 @@ def main():
     pf = sub.add_parser("freqreg", help="frequency-aware data-regularization sweep over (sigma_y, gamma)")
     _add_common(pf); _add_prior(pf)
     pf.add_argument("--sigmas", type=float, nargs="+", default=[0.0, 0.01])
+    pf.add_argument("--abs_noise", action="store_true",
+                    help="interpret --sigmas as absolute Gaussian std on the physical [-1,1] LR "
+                         "(DDRM/DPS convention) instead of our relative std (sigma*mean|y|)")
     pf.add_argument("--regs", type=float, nargs="+", default=[0.0, 16.0, 64.0])
+    pf.add_argument("--aa_sigma", type=float, default=None,
+                    help="antialias std (HR px); default=scale. Set 0 for pure (box avg-pool) downsample.")
+    pf.add_argument("--decimation", choices=["avgpool", "stride"], default="avgpool")
     pf.add_argument("--out", default="results/sr_freqreg")
     pf.add_argument("--seed", type=int, default=0)
     pf.set_defaults(func=cmd_freqreg)

@@ -41,6 +41,7 @@ PRESETS = {
     "lsun_churches64":  BDMModelConfig(64, 3, "unet", ch=128, ch_mult=(1, 2, 3, 4),    num_res_blocks=3, attn_resolutions=(32, 16, 8), dropout=0.2),
     "lsun_churches128": BDMModelConfig(128, 3, "unet", ch=64, ch_mult=(1, 2, 4, 6, 8), num_res_blocks=3, attn_resolutions=(32, 16, 8), dropout=0.1),
     "ihdm256":          BDMModelConfig(256, 3, "ihdm", ihdm_config="img_size_256_full"),
+    "ffhq256_small":    BDMModelConfig(256, 3, "unet", ch=96, ch_mult=(1, 1, 2, 2, 4, 4), num_res_blocks=3, attn_resolutions=(16, 8), dropout=0.1),  # ~69M
 }
 
 _IHDM_BACKBONE = os.path.join(os.path.dirname(__file__), "..", "ihdm_backbone")

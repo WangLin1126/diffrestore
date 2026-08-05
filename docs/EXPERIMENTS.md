@@ -77,6 +77,29 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 
 ## 9. Chronological log (newest first)
 
+- **2026-08-05 — Pure box-downsample SR + DDRM head-to-head (added to `hqs_report.tex` Table `tab:sr`).**
+  Added the *pure* box downsample (avg-pool, `aa_sigma=0`) — DDRM's native `sr4` — alongside the
+  anti-alias operator, both methods, σ_y∈{0.01,0.05}, n=16. New `--aa_sigma`/`--decimation` flags on
+  `scripts/sr.py freqreg`. **DDRM repro gotcha: `--timesteps 20` is load-bearing** — main.py defaults
+  to 1000, at which eta=0.85 injects noise every step and PSNR collapses (sr_aa control 23.21 vs the
+  table's 26.66); at 20 steps the sr_aa control reproduces the published row *exactly*
+  (26.66/0.773/0.237). DDRM's `ood_celeba` faces are md5-identical to `results/gaussian/clean` (same 16);
+  `ffhq_256.yml` (openai, class_cond false) loads `imagenet/256x256_diffusion_uncond.pt`; SSIM/LPIPS
+  recomputed from saved `{id}_-1.png` vs `orig_{id}.png` via `utils.metrics` (`[[ddrm-baseline-repro]]`).
+
+  | operator (σ_y) | SMDC+IHDM (best γ) | DDRM (`sr4`/`sr_aa`, 20 steps) |
+  |---|---|---|
+  | pure down (0.01) | **28.60/0.834**/0.252 (γ=0) | 27.84/0.811/**0.186** |
+  | pure down (0.05) | **27.80/0.806**/0.316 (γ=4) | 27.31/0.795/**0.204** |
+
+  Same distortion/perception split as everywhere: SMDC leads PSNR/SSIM (+0.76/+0.49 dB), DDRM wins
+  LPIPS. Dropping the anti-alias pre-blur destroys less HF → sharper bicubic anchor (27.16 vs 23.30 dB
+  @0.01) and milder null space. **Reg peak flips with the operator:** low-noise prefers γ=0 (flat,
+  28.60→28.57 as γ:0→1), but 0.05 is strongly speckle-limited on the box's poor transition band — a
+  *unimodal* sweep peaking at **γ=4** (27.44→27.80 dB, LPIPS .353→.316, SSIM .783→.806; γ=8 27.76, γ=16
+  27.54), a far larger payoff than the anti-alias operator's flat γ-plateau. Consistent with the
+  2026-08-03 rule that optimal γ tracks null-space/transition-band dominance.
+
 - **2026-08-03 — SR speckle → frequency-aware (DDRM/Wiener) data regularization (diagnosis + fix + productionized).**
   SMDC reconstructions show high-freq speckle. A **σ_y=0 test proved it is noise, not the prior**:
   the noiseless recon is clean (SR ×4: 26.80→**28.76 dB**, LPIPS .472→.321) and the near-cutoff band

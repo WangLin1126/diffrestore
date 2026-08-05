@@ -187,8 +187,11 @@ $\bigl(w_p\I+\mathbf R+w_y\mathbf H^{\!\top}\mathbf H\bigr)\x=\bigl(w_p\I+\mathb
 with $\lvert\hat a[j]\rvert^{2}$ taken from a Hutchinson estimate of
 $\operatorname{diag}(\A^{\!\top}\A)$ in the DCT basis. Setting $\gamma\!=\!0$
 recovers~\eqref{eq:wiener}; we use $\gamma\!=\!0.5$ by default for deblur (a small, near
-distortion-free speckle clean), while null-space operators such as super-resolution benefit from a
-larger $\gamma$.
+distortion-free speckle clean). The reg's value is strongly regime-dependent
+(Table~\ref{tab:regablation}): it pays off when the data term dominates and the transition-band
+\emph{speckle}---not the measurement noise---is the limiting error, i.e.\ for motion and for
+low-noise super-resolution ($\gamma\!\approx\!0.5$); as the noise grows the optimal $\gamma$ shrinks
+to $0$, since the error is then genuine noise the reg cannot remove.
 
 \paragraph{Basis selection and the boundary question.}
 For Gaussian/heat $\A$, $\Phimat=$ DCT and $\hat a$ is real, so $\A$ shares the prior's
@@ -284,32 +287,38 @@ by a wide margin (Table~\ref{tab:gauss}); DPS wins perceptual LPIPS.
 \begin{table}[h]
 \centering
 \caption{Gaussian deblur ($\sigma_{\text{blur}}=4$), held-out CelebA-HQ-256, across noise
-$\sigma_y$. Bold = best PSNR and best LPIPS per noise block.}
+$\sigma_y$ (absolute std on $[-1,1]$). IHDM uses its suitable frequency-aware reg $\gamma{=}0.5$.
+DDRM inverts the \emph{same} separable Gaussian via its SVD replacement, with $\sigma_0=\sigma_y/2$
+(DDRM defines noise on $[0,1]$, then doubles to $[-1,1]$); MC is omitted for DDRM as it uses its own
+range-space forward. Bold = best PSNR/SSIM/LPIPS per noise block.}
 \label{tab:gauss}
 \begin{tabular}{llcccc}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{5}{*}{0.05}
+\multirow{6}{*}{0.05}
  & Observation & 22.85 & 0.529 & 0.565 & 0.122 \\
- & TV          &26.04 & 0.742 & 0.364 & 0.093 \\
+ & TV          & 26.04 & 0.742 & 0.364 & 0.093 \\
  & cold + HQS  & 25.80 & 0.692 & 0.442 & 0.092 \\
- & IHDM + HQS  & \textbf{27.13} & \textbf{0.778} & 0.360 & 0.093 \\
+ & IHDM + HQS ($\gamma{=}0.5$) & \textbf{27.13} & \textbf{0.779} & 0.353 & 0.093 \\
  & DPS         & 23.84 & 0.678 & \textbf{0.175} & 0.102 \\
+ & DDRM        & 26.78 & 0.778 & 0.238 & -- \\
 \midrule
-\multirow{5}{*}{0.10}
+\multirow{6}{*}{0.10}
  & Observation & 21.48 & 0.352 & 0.719 & 0.198 \\
- & TV          &25.23 & 0.714 & 0.408 & 0.183 \\
+ & TV          & 25.23 & 0.714 & 0.408 & 0.183 \\
  & cold + HQS  & 25.11 & 0.683 & 0.460 & 0.181 \\
- & IHDM + HQS  & \textbf{26.47} & \textbf{0.756} & 0.380 & 0.182 \\
+ & IHDM + HQS ($\gamma{=}0.5$) & \textbf{26.41} & 0.755 & 0.375 & 0.182 \\
  & DPS         & 23.28 & 0.658 & \textbf{0.186} & 0.191 \\
+ & DDRM        & 26.34 & \textbf{0.765} & 0.242 & -- \\
 \midrule
-\multirow{5}{*}{0.20}
+\multirow{6}{*}{0.20}
  & Observation & 18.53 & 0.188 & 0.927 & 0.349 \\
- & TV          &23.44 & 0.662 & 0.481 & 0.348 \\
+ & TV          & 23.44 & 0.662 & 0.481 & 0.348 \\
  & cold + HQS  & 23.99 & 0.664 & 0.474 & 0.341 \\
- & IHDM + HQS  & \textbf{25.41} & \textbf{0.724} & 0.396 & 0.342 \\
+ & IHDM + HQS ($\gamma{=}0.5$) & 25.24 & 0.720 & 0.397 & 0.343 \\
  & DPS         & 22.57 & 0.632 & \textbf{0.201} & 0.351 \\
+ & DDRM        & \textbf{25.66} & \textbf{0.748} & 0.251 & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -345,26 +354,29 @@ boundary ring. Bold = best PSNR and best LPIPS per noise block.}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{5}{*}{0.05}
+\multirow{6}{*}{0.05}
  & Observation & 24.25 & 0.581 & 0.358 & 0.117 \\
  & TV          & 28.34 & 0.800 & 0.154 & 0.086 \\
  & cold + CG   & 22.66 & 0.440 & 0.491 & 0.061 \\
- & IHDM + CG   & \textbf{29.74} & 0.808 & \textbf{0.119} & 0.081 \\
+ & IHDM + CG ($\gamma{=}0.5$) & \textbf{30.43} & \textbf{0.847} & \textbf{0.124} & 0.085 \\
  & DPS         & 24.90 & 0.718 & 0.168 & 0.122 \\
+ & DDRM        & \multicolumn{4}{c}{-- \; (non-separable kernel; see text)} \\
 \midrule
-\multirow{5}{*}{0.10}
+\multirow{6}{*}{0.10}
  & Observation & 22.49 & 0.396 & 0.536 & 0.193 \\
  & TV          & 26.64 & 0.751 & 0.238 & 0.175 \\
  & cold + CG   & 22.05 & 0.399 & 0.542 & 0.142 \\
- & IHDM + CG   & \textbf{28.40} & 0.795 & 0.246 & 0.172 \\
+ & IHDM + CG ($\gamma{=}0.5$) & \textbf{28.32} & \textbf{0.800} & 0.264 & 0.174 \\
  & DPS         & 24.49 & 0.701 & \textbf{0.173} & 0.198 \\
+ & DDRM        & \multicolumn{4}{c}{--} \\
 \midrule
-\multirow{5}{*}{0.20}
+\multirow{6}{*}{0.20}
  & Observation & 19.07 & 0.219 & 0.790 & 0.342 \\
  & TV          & 25.02 & 0.703 & 0.328 & 0.334 \\
  & cold + CG   & 22.10 & 0.419 & 0.503 & 0.302 \\
- & IHDM + CG   & \textbf{26.78} & 0.761 & 0.327 & 0.330 \\
+ & IHDM + CG ($\gamma{=}0.5$) & \textbf{26.70} & \textbf{0.761} & 0.335 & 0.331 \\
  & DPS         & 23.74 & 0.673 & \textbf{0.184} & 0.347 \\
+ & DDRM        & \multicolumn{4}{c}{--} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -420,26 +432,167 @@ is DCT-diagonal, so IHDM, cold and TV all use the closed-form DCT-HQS data step~
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{5}{*}{0.05}
+\multirow{6}{*}{0.05}
  & Observation & 22.80 & 0.520 & 0.551 & 0.117 \\
  & TV          & 26.16 & 0.743 & 0.325 & 0.093 \\
  & cold + HQS  & 24.10 & 0.510 & 0.490 & 0.089 \\
- & IHDM + HQS  & \textbf{27.81} & 0.794 & 0.313 & 0.092 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{27.81} & \textbf{0.794} & 0.313 & 0.092 \\
  & DPS         & 23.23 & 0.659 & \textbf{0.186} & 0.117 \\
+ & DDRM        & \multicolumn{4}{c}{-- \; (non-separable disk PSF; see text)} \\
 \midrule
-\multirow{5}{*}{0.10}
+\multirow{6}{*}{0.10}
  & Observation & 21.45 & 0.346 & 0.706 & 0.195 \\
  & TV          & 25.16 & 0.711 & 0.390 & 0.182 \\
  & cold + HQS  & 24.50 & 0.578 & 0.447 & 0.178 \\
- & IHDM + HQS  & \textbf{26.64} & 0.759 & 0.371 & 0.181 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{26.64} & \textbf{0.759} & 0.371 & 0.181 \\
  & DPS         & 22.98 & 0.650 & \textbf{0.191} & 0.197 \\
+ & DDRM        & \multicolumn{4}{c}{--} \\
 \midrule
-\multirow{5}{*}{0.20}
+\multirow{6}{*}{0.20}
  & Observation & 18.53 & 0.185 & 0.916 & 0.347 \\
  & TV          & 23.91 & 0.672 & 0.449 & 0.343 \\
  & cold + HQS  & 24.00 & 0.631 & 0.427 & 0.337 \\
- & IHDM + HQS  & \textbf{25.49} & 0.725 & 0.394 & 0.340 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{25.49} & \textbf{0.725} & 0.394 & 0.340 \\
  & DPS         & 22.46 & 0.630 & \textbf{0.203} & 0.351 \\
+ & DDRM        & \multicolumn{4}{c}{--} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Super-resolution and a DDRM baseline.}
+Super-resolution ($\times4$) uses the operator $\A=\text{avg-pool}_4\!\circ\!B_{\text{aa}}$: an
+anti-alias Gaussian blur followed by area decimation. Unlike the deblur operators, $\A$ has a
+genuine \emph{null space} (its transfer vanishes above the LR Nyquist), so the plain data step
+amplifies noise into transition-band \emph{speckle}, and the frequency-aware
+reg~\eqref{eq:wienerreg} is doing real work. We compare against \textbf{DDRM}
+(pre-trained FFHQ diffusion, \texttt{ffhq\_10m}) on the \emph{same} operator: because
+$\A=H_{1}\!\otimes\!H_{1}$ is separable, its $256^2\!\times\!256^2$ SVD factors as a Kronecker
+product of the $1$-D SVD, which is exactly the structure DDRM's SVD replacement needs, so DDRM
+inverts our operator to machine precision (the exact $H_1$ is verified against
+$\A$ to $4\times10^{-15}$). Table~\ref{tab:sr} reports both at matched absolute noise
+($\sigma_0=\sigma_y/2$). SMDC$+$IHDM leads PSNR/SSIM at low noise ($\sigma_y{=}0.01$) while DDRM,
+with its stochastic hot-diffusion prior, matches or leads on PSNR at $\sigma_y{=}0.05$ and wins the
+perceptual LPIPS at both levels---the same distortion/perception split we see against DPS.
+Crucially this comparison is \emph{only} possible for separable operators: the Levin motion kernel
+and the disk defocus PSF are non-separable, so their full SVD is intractable and DDRM does not apply
+(the ``--'' rows in Tables~\ref{tab:motion},~\ref{tab:defocus}).
+
+To meet DDRM on \emph{its} home ground we also add the \emph{pure} box downsample (avg-pool, no
+anti-alias), i.e.\ DDRM's native \texttt{sr4} degradation (Table~\ref{tab:sr}, lower block). Dropping
+the anti-alias pre-blur destroys less high-frequency content, so every method starts from a sharper
+bicubic anchor ($27.16$ vs $23.30$\,dB at $\sigma_y{=}0.01$) and the null space is milder; the
+distortion/perception split nonetheless persists---SMDC$+$IHDM leads PSNR/SSIM at both noise levels
+($+0.76$/$+0.49$\,dB over DDRM) while DDRM wins LPIPS. The reg's role also flips with the operator:
+on the milder box null space the low-noise cell prefers $\gamma{=}0$ (flat, noise-free), whereas at
+$\sigma_y{=}0.05$ the box's poorer transition band makes speckle control pay off strongly---the sweep
+is unimodal with a broad peak at $\gamma{=}4$ ($27.44\!\to\!\mathbf{27.80}$\,dB, LPIPS
+$0.353\!\to\!0.316$, SSIM $0.783\!\to\!0.806$; turning over only past $\gamma{=}8$)---a far larger
+payoff than the anti-alias operator's flat $\gamma$-plateau, exactly because the box is a poorer
+low-pass with more transition-band noise to suppress.
+
+\begin{table}[h]
+\centering
+\caption{Super-resolution ($\times4$), held-out CelebA-HQ-256, $n=16$, across noise $\sigma_y$
+(absolute std on $[-1,1]$), on two decimation operators: the anti-alias Gaussian $+$ avg-pool used
+throughout, and a \emph{pure} box downsample (avg-pool, no anti-alias)---DDRM's native \texttt{sr4}
+task. SMDC uses its best reg per cell (anti-alias: $\gamma{=}0.5$ at $0.01$, $\gamma{=}0$ at $0.05$;
+pure: $\gamma{=}0$ at $0.01$, $\gamma{=}4$ at $0.05$). DDRM inverts the \emph{same} operator via its
+separable-SVD replacement ($20$ steps, $\sigma_0=\sigma_y/2$). Bold = best PSNR/SSIM/LPIPS per block
+(over the two reconstructions).}
+\label{tab:sr}
+\begin{tabular}{lllccc}
+\toprule
+Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
+\midrule
+\multirow{6}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
+ & \multirow{3}{*}{0.01} & Observation (bicubic) & 23.30 & 0.681 & 0.539 \\
+ & & SMDC + IHDM ($\gamma{=}0.5$) & \textbf{27.19} & \textbf{0.785} & 0.348 \\
+ & & DDRM & 26.66 & 0.773 & \textbf{0.237} \\
+\cmidrule{2-6}
+ & \multirow{3}{*}{0.05} & Observation (bicubic) & 22.87 & 0.611 & 0.675 \\
+ & & SMDC + IHDM ($\gamma{=}0$) & 25.40 & 0.739 & 0.401 \\
+ & & DDRM & \textbf{25.50} & \textbf{0.744} & \textbf{0.255} \\
+\midrule
+\multirow{6}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
+ & \multirow{3}{*}{0.01} & Observation (bicubic) & 27.16 & 0.798 & 0.356 \\
+ & & SMDC + IHDM ($\gamma{=}0$) & \textbf{28.60} & \textbf{0.834} & 0.252 \\
+ & & DDRM (\texttt{sr4}) & 27.84 & 0.811 & \textbf{0.186} \\
+\cmidrule{2-6}
+ & \multirow{3}{*}{0.05} & Observation (bicubic) & 26.17 & 0.721 & 0.504 \\
+ & & SMDC + IHDM ($\gamma{=}4$) & \textbf{27.80} & \textbf{0.806} & 0.316 \\
+ & & DDRM (\texttt{sr4}) & 27.31 & 0.795 & \textbf{0.204} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Frequency-aware reg ablation.}
+Table~\ref{tab:regablation} sweeps the reg $\gamma$ (Eq.~\ref{eq:wienerreg}) per degradation. The
+only \emph{large distortion} gain is \textbf{motion} ($+0.69$\,dB PSNR, $+0.038$ SSIM at
+$\sigma_y{=}0.05$), whose asymmetric reflect operator leaves a genuine weak band the prior fills.
+Elsewhere the reg is at best a near distortion-free \emph{perceptual} clean-up on a flat PSNR
+plateau: \textbf{Gaussian} is flat to $\pm0.01$\,dB across $\gamma\in[0.1,0.5]$ while LPIPS falls
+monotonically ($0.360\!\to\!0.353$, optimum $\gamma\!\approx\!0.4$), and \textbf{low-noise SR} holds
+a flat PSNR plateau ($27.20$\,dB across $\gamma\in[0,0.4]$) with LPIPS falling monotonically
+($0.355\!\to\!0.349$ over $[0,0.4]$, $\to\!0.348$ at $\gamma{=}0.5$) for a $0.01$\,dB cost. It is monotonically \emph{harmful} where the operator is (nearly) full-rank or the measurement
+noise---not speckle---dominates: \textbf{defocus} (every $\gamma>0$ hurts, $-0.02$ to $-0.14$\,dB)
+and \textbf{higher-noise SR} ($-0.19$\,dB at $\sigma_y{=}0.05$); pushing SR to $\gamma\!\ge\!2$
+costs $0.15$--$0.31$\,dB even at low noise. The lone \emph{distortion} exception among the SR rows is
+the \textbf{pure box downsample}: stripping the anti-alias pre-blur leaves a poorer low-pass with a
+real transition band, so at $\sigma_y{=}0.05$ the reg buys a genuine, unimodal $+0.36$\,dB (peak
+$\gamma{=}4$: $27.44\!\to\!27.80$\,dB, LPIPS $0.353\!\to\!0.316$, SSIM $0.783\!\to\!0.806$; it turns
+over only past $\gamma{=}8$)---far more than the anti-alias operator's flat $\gamma$-plateau, and a
+clean confirmation that the reg's payoff tracks how much transition-band noise the operator admits.
+Hence the operating points used above: $\gamma{=}0.5$ for
+Gaussian/motion (perception clean-up / distortion gain), $\gamma{=}0$ for defocus, and $\gamma$
+shrinking from $0.5$ to $0$ as \emph{aa}-SR noise grows (but rising to $\gamma{=}4$ for the box operator at $\sigma_y{=}0.05$).
+
+\begin{table}[h]
+\centering
+\caption{Frequency-aware data-regularization ablation: IHDM$+$HQS as a function of the
+prior-precision boost $\gamma$, $n=16$ (deblur at $\sigma_y{=}0.05$; SR at both noise levels).
+\emph{aa} = anti-alias Gaussian $+$ avg-pool (the default operator); \emph{box} = pure box
+downsample (avg-pool, no anti-alias; DDRM's \texttt{sr4}).
+$\Delta$ is the PSNR change from $\gamma{=}0$; bold = best PSNR/LPIPS per block. Gaussian is a flat
+plateau (PSNR $\approx\!27.14$ over $\gamma\in[0.1,0.4]$, LPIPS improving monotonically); defocus
+and higher-noise \emph{aa}-SR are monotonically hurt; low-noise \emph{aa}-SR is a flat PSNR plateau
+($27.20$ over $\gamma\in[0,0.4]$) with LPIPS improving monotonically. The \emph{box} operator, a
+poorer low-pass with a genuine transition band, is the one case where the reg is a \emph{large
+distortion} lever: low-noise still prefers $\gamma{=}0$, but $\sigma_y{=}0.05$ has a unimodal peak
+at $\gamma{=}4$ ($+0.36$\,dB, LPIPS $0.353\!\to\!0.316$), turning over past $\gamma{=}8$.}
+\label{tab:regablation}
+\begin{tabular}{llcccc}
+\toprule
+Degradation ($\sigma_y$) & $\gamma$ & PSNR & SSIM & LPIPS & $\Delta$PSNR \\
+\midrule
+\multirow{4}{*}{Gaussian (0.05)}   & 0    & 27.13 & 0.778 & 0.360 & \\
+                                   & 0.3  & 27.14 & 0.779 & 0.354 & $+0.01$ \\
+                                   & 0.4  & \textbf{27.14} & 0.779 & \textbf{0.353} & $+0.01$ \\
+                                   & 0.5  & 27.13 & 0.779 & 0.353 & $+0.00$ \\
+\midrule
+\multirow{2}{*}{Motion (0.05)}     & 0    & 29.74 & 0.809 & \textbf{0.119} & \\
+                                   & 0.5  & \textbf{30.43} & \textbf{0.847} & 0.124 & $+0.69$ \\
+\midrule
+\multirow{4}{*}{Defocus (0.05)}    & \textbf{0}    & \textbf{27.82} & 0.795 & \textbf{0.314} & \\
+                                   & 0.1  & 27.80 & 0.795 & 0.316 & $-0.02$ \\
+                                   & 0.3  & 27.75 & 0.794 & 0.321 & $-0.07$ \\
+                                   & 0.5  & 27.68 & 0.792 & 0.326 & $-0.14$ \\
+\midrule
+\multirow{4}{*}{SR aa (0.01)}      & 0    & \textbf{27.20} & 0.783 & 0.355 & \\
+                                     & 0.1  & 27.20 & 0.784 & 0.353 & $+0.00$ \\
+                                     & 0.3  & 27.20 & 0.785 & 0.350 & $+0.00$ \\
+                                     & 0.5  & 27.19 & \textbf{0.785} & \textbf{0.348} & $-0.01$ \\
+\midrule
+\multirow{2}{*}{SR aa (0.05)}      & 0    & \textbf{25.40} & \textbf{0.739} & 0.401 & \\
+                                     & 0.5  & 25.21 & 0.735 & \textbf{0.399} & $-0.19$ \\
+\midrule
+\multirow{3}{*}{SR box (0.01)}     & \textbf{0}    & \textbf{28.60} & \textbf{0.834} & \textbf{0.252} & \\
+                                     & 0.5  & 28.58 & 0.834 & 0.253 & $-0.02$ \\
+                                     & 1    & 28.57 & 0.834 & 0.254 & $-0.03$ \\
+\midrule
+\multirow{4}{*}{SR box (0.05)}     & 0    & 27.44 & 0.783 & 0.353 & \\
+                                     & 2    & 27.73 & 0.803 & 0.321 & $+0.29$ \\
+                                     & 4    & \textbf{27.80} & \textbf{0.806} & \textbf{0.316} & $+0.36$ \\
+                                     & 8    & 27.76 & 0.805 & 0.322 & $+0.32$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -447,9 +600,11 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \paragraph{Noise robustness.}
 We repeat the full comparison at higher noise, $\sigma_y\in\{0.10,0.20\}$
 (Tables~\ref{tab:gauss},~\ref{tab:motion},~\ref{tab:defocus};
-Figs.~\ref{fig:gauss_noise},~\ref{fig:motion_noise_full},~\ref{fig:defocus_noise};
-TV re-tuned per noise). The rankings are stable. On Gaussian, IHDM$+$HQS keeps the best
-PSNR/SSIM at every level ($27.13\!\to\!26.47\!\to\!25.41$\,dB) and DPS the best LPIPS. On motion
+TV re-tuned per noise). The rankings are largely stable. On Gaussian, IHDM$+$HQS ($\gamma{=}0.5$)
+has the best PSNR/SSIM at $\sigma_y\in\{0.05,0.10\}$ ($27.13\!\to\!26.41$\,dB) and DPS the best
+LPIPS; at the highest noise $\sigma_y{=}0.20$ the DDRM baseline overtakes it on both PSNR and SSIM
+($25.66$ vs $25.24$\,dB), its heavily range-space-truncated inverse proving more noise-robust than
+the closed-form MAP once the measurement is very noisy. On motion
 (reflect boundaries), IHDM$+$CG is the best full-frame method at every noise level, while DPS
 increasingly wins LPIPS as noise grows. Defocus mirrors Gaussian (same closed-form DCT-HQS): IHDM
 leads at every level ($27.81\!\to\!26.64\!\to\!25.49$\,dB), DPS wins LPIPS. All methods lose
