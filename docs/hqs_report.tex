@@ -287,7 +287,9 @@ by a wide margin (Table~\ref{tab:gauss}); DPS wins perceptual LPIPS.
 \begin{table}[h]
 \centering
 \caption{Gaussian deblur ($\sigma_{\text{blur}}=4$), held-out CelebA-HQ-256, across noise
-$\sigma_y$ (absolute std on $[-1,1]$). IHDM uses its suitable frequency-aware reg $\gamma{=}0.5$.
+$\sigma_y$ (absolute std on $[-1,1]$). IHDM uses its best per-noise reg ($\gamma{=}0.25$ at
+$\sigma_y{=}0.05$, $\gamma{=}0$ at $0.10/0.20$): the reg barely moves the full-rank Gaussian and is
+dropped as noise grows (Table~\ref{tab:regablation2}).
 DDRM inverts the \emph{same} separable Gaussian via its SVD replacement, with $\sigma_0=\sigma_y/2$
 (DDRM defines noise on $[0,1]$, then doubles to $[-1,1]$); MC is omitted for DDRM as it uses its own
 range-space forward. Bold = best PSNR/SSIM/LPIPS per noise block.}
@@ -300,7 +302,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & Observation & 22.85 & 0.529 & 0.565 & 0.122 \\
  & TV          & 26.04 & 0.742 & 0.364 & 0.093 \\
  & cold + HQS  & 25.80 & 0.692 & 0.442 & 0.092 \\
- & IHDM + HQS ($\gamma{=}0.5$) & \textbf{27.13} & \textbf{0.779} & 0.353 & 0.093 \\
+ & IHDM + HQS ($\gamma{=}0.25$) & \textbf{27.14} & \textbf{0.779} & 0.355 & 0.093 \\
  & DPS         & 23.84 & 0.678 & \textbf{0.175} & 0.102 \\
  & DDRM        & 26.78 & 0.778 & 0.238 & -- \\
 \midrule
@@ -308,7 +310,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & Observation & 21.48 & 0.352 & 0.719 & 0.198 \\
  & TV          & 25.23 & 0.714 & 0.408 & 0.183 \\
  & cold + HQS  & 25.11 & 0.683 & 0.460 & 0.181 \\
- & IHDM + HQS ($\gamma{=}0.5$) & \textbf{26.41} & 0.755 & 0.375 & 0.182 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{26.47} & 0.756 & 0.380 & 0.182 \\
  & DPS         & 23.28 & 0.658 & \textbf{0.186} & 0.191 \\
  & DDRM        & 26.34 & \textbf{0.765} & 0.242 & -- \\
 \midrule
@@ -316,7 +318,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & Observation & 18.53 & 0.188 & 0.927 & 0.349 \\
  & TV          & 23.44 & 0.662 & 0.481 & 0.348 \\
  & cold + HQS  & 23.99 & 0.664 & 0.474 & 0.341 \\
- & IHDM + HQS ($\gamma{=}0.5$) & 25.24 & 0.720 & 0.397 & 0.343 \\
+ & IHDM + HQS ($\gamma{=}0$) & 25.41 & 0.724 & 0.396 & 0.342 \\
  & DPS         & 22.57 & 0.632 & \textbf{0.201} & 0.351 \\
  & DDRM        & \textbf{25.66} & \textbf{0.748} & 0.251 & -- \\
 \bottomrule
@@ -348,7 +350,10 @@ the full frame without ringing; only DPS, whose guidance uses a circular forward
 \caption{Motion deblur (Levin09~\#1) on realistic \textbf{reflect-boundary} observations, full
 frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. IHDM, cold and TV all use
 the spatial-CG data step (Eq.~\ref{eq:cg}); DPS is a circulant baseline that inherits the
-boundary ring. Bold = best PSNR and best LPIPS per noise block.}
+boundary ring. IHDM uses its best per-noise reg ($\gamma{=}0.5$ at $\sigma_y{=}0.05$, $\gamma{=}0$ at
+$0.10/0.20$): the notch speckle the reg suppresses is strongest at low noise, so unlike SR the
+optimal $\gamma$ \emph{falls} as noise grows (Table~\ref{tab:regablation2}). Bold = best PSNR/SSIM,
+and best LPIPS, per noise block.}
 \label{tab:motion}
 \begin{tabular}{llcccc}
 \toprule
@@ -366,7 +371,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & Observation & 22.49 & 0.396 & 0.536 & 0.193 \\
  & TV          & 26.64 & 0.751 & 0.238 & 0.175 \\
  & cold + CG   & 22.05 & 0.399 & 0.542 & 0.142 \\
- & IHDM + CG ($\gamma{=}0.5$) & \textbf{28.32} & \textbf{0.800} & 0.264 & 0.174 \\
+ & IHDM + CG ($\gamma{=}0$) & \textbf{28.41} & \textbf{0.796} & 0.246 & 0.172 \\
  & DPS         & 24.49 & 0.701 & \textbf{0.173} & 0.198 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
 \midrule
@@ -374,7 +379,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & Observation & 19.07 & 0.219 & 0.790 & 0.342 \\
  & TV          & 25.02 & 0.703 & 0.328 & 0.334 \\
  & cold + CG   & 22.10 & 0.419 & 0.503 & 0.302 \\
- & IHDM + CG ($\gamma{=}0.5$) & \textbf{26.70} & \textbf{0.761} & 0.335 & 0.331 \\
+ & IHDM + CG ($\gamma{=}0$) & \textbf{26.79} & \textbf{0.761} & 0.328 & 0.330 \\
  & DPS         & 23.74 & 0.673 & \textbf{0.184} & 0.347 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
 \bottomrule
@@ -542,9 +547,12 @@ real transition band, so at $\sigma_y{=}0.05$ the reg buys a genuine, unimodal $
 $\gamma{=}4$: $27.44\!\to\!27.80$\,dB, LPIPS $0.353\!\to\!0.316$, SSIM $0.783\!\to\!0.806$; it turns
 over only past $\gamma{=}8$)---far more than the anti-alias operator's flat $\gamma$-plateau, and a
 clean confirmation that the reg's payoff tracks how much transition-band noise the operator admits.
-Hence the operating points used above: $\gamma{=}0.5$ for
-Gaussian/motion (perception clean-up / distortion gain), $\gamma{=}0$ for defocus, and $\gamma$
-shrinking from $0.5$ to $0$ as \emph{aa}-SR noise grows (but rising to $\gamma{=}4$ for the box operator at $\sigma_y{=}0.05$).
+Hence the per-noise operating points (Table~\ref{tab:regablation2}): $\gamma$ \emph{shrinks} with
+noise---$0.25\!\to\!0$ for Gaussian and $0.5\!\to\!0$ for motion (the reg helps only at the lowest
+noise, where motion's near-zero notches inject the most speckle and the full-rank Gaussian is
+speckle-free anyway)---$\gamma{=}0$ for defocus, while for the box-SR operator alone $\gamma$
+\emph{rises} $0\!\to\!4$ as noise grows, because its weak band is a contiguous prior-filled cutoff
+rather than active notches.
 
 \begin{table}[h]
 \centering
@@ -597,13 +605,40 @@ Degradation ($\sigma_y$) & $\gamma$ & PSNR & SSIM & LPIPS & $\Delta$PSNR \\
 \end{tabular}
 \end{table}
 
+\begin{table}[h]
+\centering
+\caption{Reg $\gamma$ vs \emph{noise}: IHDM PSNR (dB) sweep for Gaussian ($+$HQS) and motion ($+$CG),
+$n=16$, at each $\sigma_y$; bold = best, $\gamma^\ast$ = argmax (the value used in
+Tables~\ref{tab:gauss},~\ref{tab:motion}). The optimal $\gamma$ \emph{decreases} with noise for
+both: motion's near-zero notches inject the most speckle when data is trusted most (low noise), and
+the full-rank Gaussian is speckle-free so its reg only ever costs. This is the mirror image of the
+box-SR operator (Table~\ref{tab:regablation}), whose contiguous cutoff makes $\gamma^\ast$ \emph{rise}
+with noise---the sign of $d\gamma^\ast/d\sigma_y$ is set by whether the weak band is active near-zero
+notches (motion, low-noise) or a prior-filled cutoff (SR, high-noise).}
+\label{tab:regablation2}
+\begin{tabular}{ll ccccc c}
+\toprule
+Operator & $\sigma_y$ & $\gamma{=}0$ & $0.25$ & $0.5$ & $1$ & $2$ & $\gamma^\ast$ \\
+\midrule
+\multirow{3}{*}{Gaussian} & 0.05 & 27.13 & \textbf{27.14} & 27.13 & 27.08 & 26.98 & 0.25 \\
+                          & 0.10 & \textbf{26.47} & 26.45 & 26.41 & 26.34 & 26.18 & 0 \\
+                          & 0.20 & \textbf{25.41} & 25.32 & 25.24 & 25.08 & 24.79 & 0 \\
+\midrule
+\multirow{3}{*}{Motion}   & 0.05 & 29.74 & 30.30 & \textbf{30.43} & 30.35 & 29.96 & 0.5 \\
+                          & 0.10 & \textbf{28.41} & 28.38 & 28.32 & 28.19 & 27.96 & 0 \\
+                          & 0.20 & \textbf{26.79} & 26.74 & 26.70 & 26.60 & 26.42 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \paragraph{Noise robustness.}
 We repeat the full comparison at higher noise, $\sigma_y\in\{0.10,0.20\}$
 (Tables~\ref{tab:gauss},~\ref{tab:motion},~\ref{tab:defocus};
-TV re-tuned per noise). The rankings are largely stable. On Gaussian, IHDM$+$HQS ($\gamma{=}0.5$)
-has the best PSNR/SSIM at $\sigma_y\in\{0.05,0.10\}$ ($27.13\!\to\!26.41$\,dB) and DPS the best
+TV re-tuned per noise). The rankings are largely stable. On Gaussian, IHDM$+$HQS (best per-noise
+reg, $\gamma{=}0.25\!\to\!0$; Table~\ref{tab:regablation2}) has the best PSNR/SSIM at
+$\sigma_y\in\{0.05,0.10\}$ ($27.14\!\to\!26.47$\,dB) and DPS the best
 LPIPS; at the highest noise $\sigma_y{=}0.20$ the DDRM baseline overtakes it on both PSNR and SSIM
-($25.66$ vs $25.24$\,dB), its heavily range-space-truncated inverse proving more noise-robust than
+($25.66$ vs $25.41$\,dB), its heavily range-space-truncated inverse proving more noise-robust than
 the closed-form MAP once the measurement is very noisy. On motion
 (reflect boundaries), IHDM$+$CG is the best full-frame method at every noise level, while DPS
 increasingly wins LPIPS as noise grows. Defocus mirrors Gaussian (same closed-form DCT-HQS): IHDM

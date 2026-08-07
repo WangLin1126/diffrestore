@@ -77,6 +77,43 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 
 ## 9. Chronological log (newest first)
 
+- **2026-08-05 — Per-noise reg γ for the deblur tables (fixes the uniform γ=0.5 that violated the noise rule).**
+  Swept γ∈{0,0.25,0.5,1,2} × σ_y∈{0.05,0.10,0.20} for Gaussian(+HQS) and motion(+CG), n=16, on the
+  pre-generated `results/{gaussian,motion_reflect}[_n0p10/_n0p20]` obs (`deblur.py freqreg`, sharded 1
+  noise/GPU). γ=0.5 reproduced the old table cells **exactly** (validates the pipeline). PSNR-optimal γ*
+  (used to update `tab:gauss`/`tab:motion`, + new noise×γ Table `tab:regablation2`):
+
+  | | σ=0.05 | 0.10 | 0.20 |
+  |---|---|---|---|
+  | Gaussian γ* | 0.25 (27.14) | **0** (26.47) | **0** (25.41) |
+  | Motion γ*   | 0.5 (30.43) | **0** (28.41) | **0** (26.79) |
+
+  Full sweep, PSNR/SSIM/LPIPS (**bold** = best PSNR per row):
+
+  *Gaussian (+HQS):*
+  | σ_y | γ=0 | γ=0.25 | γ=0.5 | γ=1 | γ=2 |
+  |---|---|---|---|---|---|
+  | 0.05 | 27.13/.778/.360 | **27.14**/.779/.355 | 27.13/.779/.353 | 27.08/.779/.352 | 26.98/.776/.355 |
+  | 0.10 | **26.47**/.756/.380 | 26.45/.756/.377 | 26.41/.755/.375 | 26.34/.754/.375 | 26.18/.750/.377 |
+  | 0.20 | **25.41**/.724/.396 | 25.32/.722/.396 | 25.24/.720/.397 | 25.08/.716/.398 | 24.79/.709/.402 |
+
+  *Motion (+CG, reflect):*
+  | σ_y | γ=0 | γ=0.25 | γ=0.5 | γ=1 | γ=2 |
+  |---|---|---|---|---|---|
+  | 0.05 | 29.74/.809/.119 | 30.30/.838/**.113** | **30.43**/.847/.124 | 30.35/**.850**/.150 | 29.96/.845/.189 |
+  | 0.10 | **28.41**/.796/**.246** | 28.38/.799/.256 | 28.32/.800/.264 | 28.19/.800/.277 | 27.96/.796/.294 |
+  | 0.20 | **26.79**/.761/**.328** | 26.74/.761/.332 | 26.70/.761/.335 | 26.60/.759/.341 | 26.42/.755/.349 |
+
+  (MC ~flat in γ: Gaussian .093/.182/.342, motion .081–.089 / .172 / .330 across the sweep.) Note the
+  perception/distortion split *within* the sweep: motion@0.05 best LPIPS is γ=0.25 (.113) and best SSIM
+  γ=1 (.850), while PSNR peaks at γ=0.5 — a Pareto pick would shift motion@0.05 to γ=0.25.
+
+  **γ* decreases with noise for both** — the mirror image of box-SR (γ* rises 0→4). Gaussian is full-rank/
+  speckle-free so reg only ever costs (γ*=0.25 at 0.05 is a trivial +0.01 dB; strictly harmful above);
+  motion's near-zero notches inject most speckle when data is trusted most (low noise), so reg pays only at
+  0.05 (+0.69 dB) and γ*→0 by 0.10. All IHDM numbers/bolding in both tables updated to the per-noise γ*
+  (report compiles, 13 pp). Same-day `[[transfer-profiles]]` mechanism (σ*∝ε) predicts the sign of dγ*/dσ_y.
+
 - **2026-08-05 — Why optimal γ moves with noise in *opposite* directions for SR vs motion (transfer-profile
   mechanism).** The plain data step's noise gain `g_n[j]=w_y|â|σ_y/(w_p+w_y|â|²)` peaks over frequency at
   `|â|*=√(w_p/w_y)∝σ_y`; for a *fixed* weak frequency of gain ε it peaks over noise at **σ*∝ε** — each

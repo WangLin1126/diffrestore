@@ -1,163 +1,128 @@
-# Roadmap — extending Scale-Matched Data Consistency (SMDC)
+# Roadmap — Scale-Matched Data Consistency (SMDC)
 
-Status baseline (2026-08-03): Gaussian deblur (IHDM+HQS, DCT-exact), motion deblur
-(IHDM+CG, reflect-boundary `R+R+R`), **defocus deblur** (IHDM+HQS, closed-form DCT-Wiener,
-three noise levels), and **super-resolution** (IHDM+CG, LR-grid heat companion, ×4 PoC)
-complete; CT operator+gates+PoC done (tuning open). This document plans the next phase: more
-degradation models, a stronger backbone, and a Blurring-Diffusion upgrade of the heat framework.
-
-**Solver-alignment principle (established 2026-07-31).** For each degradation mode, TV,
-cold, and IHDM all use the *same* data-consistency solver, chosen by the operator's symmetry:
-a both-axes-symmetric kernel under reflect (half-sample-symmetric) boundary is exactly
-diagonalized by DCT-II — the Neumann heat basis — so **Gaussian and defocus get a closed-form
-DCT-Wiener HQS step** (`â = DCT(A·IDCT(𝟙))`, diagonalization residual ~9e-6), while the
-**asymmetric motion kernel needs spatial reflect-CG**. CG and the closed-form DCT solve agree
-to ~0.01 dB where both apply, so the split is an efficiency choice, not an accuracy one.
+Two tracks run in parallel. **Track A (paper submission) is the active priority**; Track B is
+the longer-horizon research agenda. Items are listed in priority order within each track.
 
 ---
 
-## 0. The load-bearing assumption: intertwining
+# Track A — Submission-grade experiments (target: top CV/ML conf)
 
-Every SMDC result rests on the exact relation (verified by `tests/gates.py::gate_intertwining`)
+Goal: turn the current technical report (`docs/hqs_report.tex`) into a submittable experiments
+section for CVPR / NeurIPS / ICLR. Every claim in the title — **scale-matched DC**, **non-hot
+prior**, **freq-aware reg** — must be defended by a measured experiment.
 
-```
-    L_t A = A K_t
-```
+**Where we stand (gaps that block submission):** `n=16` test images (too small — reject risk);
+one dataset (CelebA-HQ-256 faces only); baselines are DPS + DDRM, both now the *floor* not the
+frontier; the title claim (scale-matched DC) has **no ablation**.
 
-`K_t` is the heat prior's forward degradation; `A` is the measurement operator; `L_t` is the
-**measurement-side companion** that carries the scale-t blur onto the observation so the
-per-step likelihood lives on `x_t` directly (no DPS-style `x̂₀`/backprop). For each new `A`
-the first question is *not* "can we code it" but **"does an intertwining `L_t` exist?"** That
-single question sorts the modality list:
+## A1 — Must-have (desk-reject risk without these)
 
-| Modality | Forward `A` | Companion `L_t` | Intertwining | Fit |
+1. **1k test set + mean±std.** *[dependency for everything else — do FIRST]* Re-run all existing
+   tables on a 1k held-out CelebA-HQ split; use the **DDRM/DPS published 1k indices** so the DDRM
+   row is checkable against their papers (free credibility). Report mean±std. If any number moves
+   materially from `n=16`, every downstream comparison must adopt the new value — hence first.
+2. **Second dataset — ImageNet-256.** Port method + all baselines. This is where the *non-hot
+   prior* claim is actually on trial (faces are low-entropy; natural images are the honest test).
+   Largest compute block — freeze the eval pipeline and baseline harness before starting, or redo.
+3. **Modern baselines under identical operator/noise/test-set.** Add **DiffPIR** (novelty-defining
+   — it is also HQS+diffusion, so our scale-matched measurement + non-hot prior must be the
+   articulated, *measured* difference), **DDNM**, **ΠGDM** (closest to our closed-form Wiener DC);
+   RED-diff optional. DDRM/DPS stay as the floor.
+
+## A2 — Strongly expected (borderline → clear accept)
+
+4. **Scale-matched vs naive DC ablation** (same prior). The *title* contribution; currently zero
+   ablation. Highest-value single experiment missing.
+5. **Non-hot (IHDM) vs hot/VP prior** ablation, same framework — isolates the prior claim.
+6. **NFE + runtime columns** on every method × table. The compute–quality tradeoff is the selling
+   point of this method class; a cheaper per-step closed form is a headline only if it's tabulated.
+7. **NFE sweep** (PSNR/LPIPS vs number of HQS steps) — shows graceful degradation, justifies the
+   chosen operating point.
+8. **Robustness to misspecification:** assumed σ_y ≠ true σ_y, and kernel mismatch (estimated PSF).
+   Extends the existing γ-vs-noise mechanism from a tuning detail into a contribution.
+
+## A3 — Breadth (widens acceptance)
+
+9. **Inpainting operator** (box / random mask) — canonical DDNM/DDRM benchmark, cheap to add;
+   omitting it reads as avoidance. (Note nonlinear tasks as out-of-scope: framework is linear.)
+10. **Qualitative grids** per operator vs baselines, plus the **speckle-without-reg failure case**
+    (motivates the freq-reg contribution visually). Keep the transfer-profile figure.
+11. Keep the existing **freq-aware γ ablation** (`tab:regablation`, `tab:regablation2`).
+
+## Execution discipline (carry into every re-run — a broken baseline makes our win look fake)
+
+- **DDRM `--timesteps 20` is load-bearing.** `main.py` defaults to `1000`, which silently collapses
+  DDRM (~23 dB vs correct ~26.7 — no error, just a bad number). Control (`sr_aa`, σ_y=0.05) must
+  reproduce **26.66 / 0.773 / 0.237** before trusting *any* DDRM cell. Put "20 steps" in **every**
+  DDRM caption (currently only the SR caption states it). General rule: each baseline must reproduce
+  its own *published* number on a standard operator before we trust it on ours (DiffPIR/DDNM/ΠGDM
+  each have their own load-bearing settings — step count, guidance scale, schedule).
+- **γ / hyperparameter tuning on a held-out tuning subset, never the 1k eval set** (else it reads as
+  test-set tuning). Same discipline for every baseline: tune all methods on the same split, or none.
+- Report the current tables' numbers as they stand (already run at 20 steps, so the *existing*
+  report is correct) — the risk above is forward-looking, about the 1k re-run.
+
+---
+
+# Track B — Method extension (research agenda)
+
+Status baseline (2026-08-03): **Gaussian** (IHDM+HQS, DCT-exact), **motion** (IHDM+CG,
+reflect-boundary), **defocus** (IHDM+HQS, closed-form DCT-Wiener, 3 noise levels), **super-res**
+(IHDM+CG, LR-grid heat companion, ×4) complete; **CT** operator+gates+PoC done (tuning open).
+
+**Solver-alignment principle (2026-07-31):** TV, cold, and IHDM share one data-consistency solver,
+chosen by operator symmetry. Both-axes-symmetric kernel under reflect boundary → exactly diagonalized
+by DCT-II (Neumann heat basis) → **closed-form DCT-Wiener HQS** (residual ~9e-6). Asymmetric motion
+kernel → **spatial reflect-CG**. CG and closed-form agree to ~0.01 dB where both apply (efficiency
+choice, not accuracy).
+
+## The load-bearing assumption: intertwining `L_t A = A K_t`
+
+`K_t` = heat prior's forward blur; `A` = measurement operator; `L_t` = **measurement-side companion**
+carrying the scale-t blur onto the observation so the per-step likelihood lives on `x_t` directly
+(no DPS-style `x̂₀`/backprop). For each new `A` the first question is **"does an intertwining `L_t`
+exist?"** (gate: `tests/gates.py::gate_intertwining`).
+
+| Modality | Forward `A` | Companion `L_t` | Intertwining | Status |
 |---|---|---|---|---|
-| Gaussian deblur ✅ | isotropic conv | `L_t = K_t` | exact (circular) / ~1e-3 (reflect) | done (DCT-HQS) |
-| Motion deblur ✅ | motion conv | `L_t = K_t` | ~1e-3 (reflect) | done (reflect-CG) |
-| Defocus deblur ✅ | disk/pillbox conv | `L_t = K_t` | exact (circular) / ~1e-15 (DCT-diagonal) | **done (closed-form DCT-HQS)** |
-| CT ◐ | Radon `R` | **1D heat blur along detector axis** | continuum-exact; ~0.2% fine / 4.5% coarse @256 (discrete) | **operator+gate+PoC done; tuning open** |
-| Super-res ✅ | blur ∘ downsample | heat blur on the **LR grid** (`σ_t/s`) | ~2e-4 (avg-pool decimation) | **done (operator+gate+PoC)** |
-| **MRI** | mask ∘ `F` | k-space multiply by `g_t` on sampled lines | **exact iff prior uses DFT/periodic heat** (not DCT) | basis decision first |
+| Gaussian ✅ | isotropic conv | `K_t` | exact / ~1e-3 reflect | done (DCT-HQS) |
+| Motion ✅ | motion conv | `K_t` | ~1e-3 reflect | done (reflect-CG) |
+| Defocus ✅ | disk conv | `K_t` | ~1e-15 (DCT-diag) | done (closed-form DCT-HQS) |
+| Super-res ✅ | blur ∘ downsample | LR-grid heat (`σ_t/s`) | ~2e-4 (avg-pool) | done (operator+gate+PoC) |
+| CT ◐ | Radon `R` | 1-D detector-axis heat | ~0.2% fine / 4.5% coarse @256 | op+gate+PoC done; **tuning open** |
+| MRI | mask ∘ `F` | k-space multiply by `g_t` | exact **iff** prior uses DFT/periodic heat | **basis decision first (§B4)** |
 
-**Why CT is exact:** blurring the image by an isotropic Gaussian then projecting equals
-projecting then 1-D-Gaussian-blurring the sinogram along the detector (Fourier-slice theorem).
-So the isotropic heat prior has a *natural* sinogram-space companion `L_t` = 1-D detector-axis
-heat blur. This is a genuine result, not a hack.
+- *Why CT is exact:* Fourier-slice — blur-then-project = project-then-1-D-blur-sinogram. Genuine
+  result, not a hack. Open work is CT-specific tuning (inscribed-disk FOV / phantoms, grayscale vs
+  per-channel, ramp/FBP-preconditioned data step), not plumbing.
+- *Why MRI needs a decision:* masked-Fourier commutes with **DFT/periodic** heat but only
+  approximately with the current **Neumann/DCT** heat. Pin the basis before starting (§B4).
 
-**Why MRI needs a decision:** masked-Fourier intertwines perfectly with **periodic (DFT)**
-heat (`M`, `g_t` both diagonal in the DFT basis, so they commute), but the current IHDM prior
-uses **Neumann/DCT** heat. DCT-heat ≠ DFT-heat → the commutation is only approximate. See §4.
+## B4 — The one early decision: prior heat eigenbasis
 
----
+DCT/Neumann (current) serves deblur/defocus/CT/super-res; DFT/periodic is required for exact MRI.
+Both a transformer backbone and a BDM upgrade force a retrain — that retrain is the moment to switch
+to periodic heat or make the basis a config flag. **Pin before MRI.**
 
-## 1. New degradation models (item 1)
+## B5 — Blurring-Diffusion (BDM) upgrade
 
-The universal enabler is already built: the **spatial CG data step** needs only `A·v` and
-`Aᵀ·v`, and the **autograd-VJP adjoint** (`ops/motion_spatial.py::SpatialMotionBlur.adjoint`)
-gives the *exact* adjoint of any differentiable forward for free. So each new modality needs
-only a forward operator + a scale-matched target `L_t y`; the solver (`utils/pipeline.py::smdc_cg`
-loop) is reused verbatim.
+BDM (Hoogeboom & Salimans 2022) = heat dissipation + added Gaussian noise as a proper VP diffusion
+in frequency space. **Fixes what we measured:** exact GLS whitening degrades (32.18 → 27.00 dB,
+`scratchpad/whiten_test.py`) because forward covariance `σ_n² g_t²` is singular on damped
+frequencies; BDM's floored covariance `g_t²σ_blur² + σ_noise² > 0` is never singular → principled
+noise-floored schedule + stochastic reverse. Highest value, highest effort; re-derive scale-matching
+for the noisy forward + retrain. Do **after ≥1 non-deblur modality** validates generalization.
 
-Per-modality plan and the acceptance gate each needs:
+## B6 — Transformer backbone
 
-- **Defocus** ✅ *(done, 2026-07-31)* — disk/pillbox PSF. `L_t = K_t` (same as deblur), and
-  because the disk is symmetric it is DCT-diagonal, so TV/cold/IHDM all use the **closed-form
-  DCT-Wiener HQS** data step (no CG needed; `scripts/deblur.py restore --operator defocus`, `run_tv_hqs.py --operator
-  disk`). Results at σ_y ∈ {0.05, 0.10, 0.20}, n=16 (`tab:defocus`): IHDM+HQS
-  **27.81 / 26.64 / 25.49 dB** beats TV (26.16 / 25.16 / 23.91) and cold (24.10 / 24.50 / 24.00);
-  DPS is the circulant baseline (best LPIPS). Intertwining residual ~1e-15.
-- **CT** ◐ *(operator + gate + PoC done, 2026-07-31)* — `ops/ct.py`: `ParallelBeamRadon`
-  (pure-torch differentiable rotate-and-sum; adjoint = VJP back-projection, exact to 1e-14) +
-  `DetectorHeatBlur` (1-D detector-axis heat companion `L_t`). Gates `gate_ct_adjoint` and
-  `gate_intertwining_ct` in `tests/gates.py`. The Fourier-slice intertwining `R(K_t x)=L_t(R x)`
-  is a *continuum* identity → on the discrete projector it holds to ~0.2% (fine) / 4.5% (coarse)
-  at 256, tightening with resolution — looser than deblur's 1e-3 but fine for SMDC (the
-  continuation weights fine scales most). `scripts/ct.py` reconstructs recognizable faces
-  from 180-view sinograms (reuse motion-CG, normalize `‖R‖=1`, target `L_{t-1} y`).
-  **Open (tuning, not plumbing):** inscribed-disk FOV / proper phantoms (faces fill the frame),
-  grayscale vs per-channel color, and a ramp/FBP-preconditioned data step (unfiltered `RᵀR` is
-  low-pass). See EXPERIMENTS 2026-07-31.
-- **Super-res** ✅ *(done, 2026-08-03)* — `ops/superres.py`: `SuperResolution` (`A = D_s ∘ B_aa`,
-  antialias Gaussian blur built in the shared DCT basis so it commutes with `K_t` *exactly*, then
-  **area/avg-pool decimation** — avg-pool samples the LR half-sample-symmetric grid *center*, so it
-  is the DCT-II-consistent decimation; plain strided `::s` samples the corner and injects a
-  `(s-1)/2`-px phase error that breaks the intertwining by 5–14% for even `s`). Adjoint = exact
-  autograd VJP (`<Ax,y>=<x,Aᵀy>` to ~2e-15). Companion `L_t` = LR-grid heat blur (`σ_t/s`,
-  `lr_heat_schedule`). Gates `gate_sr_adjoint` + `gate_intertwining_sr` in `tests/gates.py`: the
-  decimation intertwining `A(K_t x)=L_t(A x)` holds to **~2e-4** (an order of magnitude tighter than
-  CT — the antialias `B_aa` at `σ=s` suppresses the aliasing; a light `σ=0.5s` leaks ~3.5e-2 and
-  avg-pool alone ~40%). `scripts/sr.py demo` reconstructs FFHQ-256 faces from ×4 LR (64px) reusing
-  the motion-CG data step verbatim (target `L_{t-1} y` in LR space, `‖A‖=1` normalized): n=4,
-  σ_y=0.01 → **bicubic 23.17 → SMDC+IHDM 26.80 dB** (SSIM 0.72). Baselines on the *same* operator +
-  observation (`scripts/sr.py baselines`, `figure_sr_compare.png`): **DPS 22.14 dB / LPIPS 0.228**
-  (wins perception, hallucinates off-GT), **TV+CG 26.80 / SSIM 0.771** (ties SMDC on PSNR). Unlike
-  deblur, SMDC does not lead here — ×4 SR w/ strong antialias is a mild, TV-friendly problem; SR
-  validates the framework rather than showcasing the learned prior (de-speckling SMDC is the open lever).
-- **MRI** — `A = M ∘ F`; Cartesian first (`L_t` = multiply sampled k-space by `g_t`), then
-  radial via NUFFT (adjoint = gridding, VJP). Resolve the eigenbasis (§4) before starting.
+Backbone is orthogonal to all SMDC math (solver only calls `prior.reverse_step`). Candidates:
+Restormer / Uformer / NAFNet (restoration-oriented, exploit IHDM's coarse-to-fine ladder), not a
+generation DiT. Cost = full retrain of the ~211M prior (no equation changes). **Fold into the BDM
+retrain (§B5)** so the prior trains once.
 
-Each modality is a self-contained `results/<modality>/` dir + a `make_<modality>_obs.py`
-generator; restoration reuses `scripts/deblur.py restore --operator motion` with the new operator.
+## Recommended Track-B sequence
 
----
-
-## 2. Backbone upgrade — transformers (item 2)
-
-The backbone is **orthogonal to all SMDC math**: the solver only calls `prior.reverse_step`,
-so the network behind it is a black box. Candidates, for a *restoration* prior with progressive
-coarse-to-fine structure: **Restormer / Uformer / NAFNet** (conv-transformer hybrids) rather
-than a generation-oriented DiT. Exploit IHDM's coarse-to-fine ladder to keep attention cheap
-at fine scales.
-
-Cost: a full retrain of the ~211M prior (no equation changes). **Sequence last**, or fold it
-into the Blurring-Diffusion retrain (§3) so the prior is trained only once.
-
----
-
-## 3. Blurring Diffusion upgrade of the heat framework (item 3)
-
-Blurring Diffusion Models (Hoogeboom & Salimans, 2022) = heat dissipation **+ added Gaussian
-noise**, framed as a proper VP diffusion in frequency space, preserving coarse-to-fine.
-
-**Why it is the deepest and most aligned direction — it fixes what we measured.** The
-whitened-data-consistency test (`scratchpad/whiten_test.py`, 2026-07-31) showed exact GLS
-whitening degrades monotonically (32.18 → 27.00 dB) because the forward covariance
-`σ_n² g_t²` is singular on damped frequencies (`1/g_t²` blow-up, MATH §4.2). BDM makes the
-forward covariance
-
-```
-    g_t² σ_blur²  +  σ_noise²   >  0     (never singular)
-```
-
-i.e. it turns the fragile whitening into a **principled noise-floored schedule**, and gives a
-stochastic reverse (diversity / uncertainty) while keeping progressive restoration.
-
-Cost/scope: re-derive scale-matching for the noisy forward (the companion `L_t` becomes the
-*floored* whitening, not plain `K_t`), and retrain the prior. Highest value, highest effort.
-Do **after ≥1 non-deblur modality** (CT or SR) validates that the framework generalizes.
-
----
-
-## 4. The one early decision: the prior's heat eigenbasis
-
-- **DCT / Neumann** (current): serves deblur, defocus, CT, super-res.
-- **DFT / periodic**: required for exact MRI intertwining.
-
-Since both §2 (transformer) and §3 (BDM) force a retrain, that retrain is the moment to either
-(a) switch to periodic heat, or (b) make the basis a config flag. **Pin this before MRI (item
-1d), not during it.**
-
----
-
-## Recommended sequence
-
-1. **Defocus** ✅ — warm-up; proved "any convolution" + closed-form DCT-HQS for symmetric
-   kernels; three noise levels done. *(complete)*
-2. **CT** ◐ — operator, both gates, and an end-to-end PoC done (recognizable faces from 180
-   views); remaining work is CT-specific tuning (disk FOV / phantoms, grayscale, ramp-preconditioned
-   data step). *(core validated)*
-3. **Super-res** ✅ — `L_t` = LR-grid heat blur (`σ_t/s`); avg-pool decimation makes the
-   intertwining ~2e-4; ×4 FFHQ PoC beats bicubic by +3.5 dB. *(complete)*
-4. **MRI** — after the eigenbasis decision (§4); Cartesian → radial.
-5. **BDM upgrade (§3)** — retrain here; subsumes the whitening fix.
-6. **Transformer backbone (§2)** — fold into the BDM retrain.
+1. Defocus ✅ · 2. CT ◐ (core validated, tuning open) · 3. Super-res ✅ ·
+4. **MRI** (after §B4 eigenbasis decision; Cartesian → radial) ·
+5. **BDM (§B5)** — retrain here, subsumes the whitening fix ·
+6. **Transformer (§B6)** — fold into the BDM retrain.
