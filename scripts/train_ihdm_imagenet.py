@@ -15,6 +15,14 @@ Launch (remote, N GPUs on one node) -- DDP via torchrun (recommended at ADM scal
         --data_root /data/imagenet256/train --batch 16 --steps 500000 \
         --out checkpoint/ihdm/imagenet256.pth
 
+torchrun --standalone --nproc_per_node=4 \
+    scripts/train_ihdm_imagenet.py \
+    --data_root data/imagenet-1k-256x256/data/train \
+    --batch 32 --lr 8e-5 --steps 2000000 \
+    --workers 8 --shuffle_buf 512 --grad_ckpt \
+    --precision bf16 --fused_adam \
+    --out checkpoint/ihdm/imagenet256.pth
+
 Single GPU / no torchrun (falls back automatically):
     python scripts/train_ihdm_imagenet.py --data_root /data/imagenet256/train --batch 8 --device cuda:0
 
@@ -162,8 +170,14 @@ def main():
     ap.add_argument("--workers", type=int, default=8, help="DataLoader workers per process")
     ap.add_argument("--grad_ckpt", action="store_true",
                     help="gradient checkpointing (recompute activations): big memory saving, ~30%% slower")
+    ap.add_argument("--precision", choices=("fp32", "bf16"), default="fp32",
+                    help="compute precision; use bf16 on Ampere/Hopper for tensor-core acceleration")
+    ap.add_argument("--fused_adam", action="store_true",
+                    help="use PyTorch's fused CUDA Adam implementation")
     ap.add_argument("--device", default="cuda:0", help="single-process device (ignored under torchrun)")
     ap.add_argument("--log_every", type=int, default=100)
+    ap.add_argument("--log_file", default="results/ihdm_imagenet256/train.log",
+                    help="rank-0 runtime log; appended so resumed runs keep their history")
     ap.add_argument("--ckpt_every", type=int, default=5000)
     ap.add_argument("--sample_every", type=int, default=10000)
     ap.add_argument("--out", default="checkpoint/ihdm/imagenet256.pth")
@@ -174,10 +188,27 @@ def main():
     is_dist, rank, world, local = ddp_setup()
     is_main = (rank == 0)
     device = f"cuda:{local}" if is_dist else args.device
+    use_bf16 = args.precision == "bf16"
+    if use_bf16 and not torch.cuda.is_bf16_supported():
+        raise RuntimeError("--precision bf16 requires a BF16-capable CUDA GPU")
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
     set_seed(args.seed + rank)                            # decorrelate per-rank augmentation/noise
     if is_main:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         os.makedirs("results/ihdm_imagenet256", exist_ok=True)
+        os.makedirs(os.path.dirname(args.log_file) or ".", exist_ok=True)
+        log_fp = open(args.log_file, "a", buffering=1)
+    else:
+        log_fp = None
+
+    def log(message):
+        """Print and persist timestamped rank-0 progress."""
+        if not is_main:
+            return
+        line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}"
+        print(line, flush=True)
+        print(line, file=log_fp, flush=True)
 
     config = importlib.import_module(f"configs.ffhq.{args.config}").get_config()
     config.device = torch.device(device)
@@ -192,13 +223,16 @@ def main():
     ema = ExponentialMovingAverage(net.parameters(), decay=config.model.ema_rate)
     model = DDP(net, device_ids=[local]) if is_dist else net
     opt = torch.optim.Adam(net.parameters(), lr=config.optim.lr,
-                           betas=(config.optim.beta1, 0.999), eps=config.optim.eps)
+                           betas=(config.optim.beta1, 0.999), eps=config.optim.eps,
+                           fused=args.fused_adam)
     heat = mutils.create_forward_process(config, config.device)   # DCTBlur on device
     if is_main:
         n_params = sum(p.numel() for p in net.parameters()) / 1e6
-        print(f"  IHDM-ImageNet [{args.config}]: {n_params:.1f}M params | K={K} | "
-              f"world={world} | per_gpu_batch={args.batch} | global_batch={args.batch*world} | "
-              f"lr={config.optim.lr:.1e}", flush=True)
+        log(f"IHDM-ImageNet [{args.config}]: {n_params:.1f}M params | K={K} | "
+            f"world={world} | per_gpu_batch={args.batch} | global_batch={args.batch*world} | "
+            f"lr={config.optim.lr:.1e} | precision={args.precision} | "
+            f"fused_adam={args.fused_adam} | grad_ckpt={args.grad_ckpt} | "
+            f"steps={args.steps} | output={args.out}")
 
     # ---- streaming data (auto-detect: parquet shards vs ImageFolder tree)
     preproc = Preproc(imsz, hflip=config.data.random_flip)
@@ -211,8 +245,8 @@ def main():
                             pin_memory=True, drop_last=True, persistent_workers=(args.workers > 0))
         batches = iter(loader)                            # already infinite
         if is_main:
-            print(f"  data: {len(parquet_files)} parquet shards under {args.data_root} "
-                  f"(streaming, shuffle_buf={args.shuffle_buf})", flush=True)
+            log(f"data: {len(parquet_files)} parquet shards under {args.data_root} "
+                f"(streaming, workers={args.workers}, shuffle_buf={args.shuffle_buf})")
     else:                                                 # ImageFolder tree of image files
         ds = datasets.ImageFolder(args.data_root, transform=preproc)
         sampler = torch.utils.data.distributed.DistributedSampler(ds, shuffle=True) if is_dist else None
@@ -221,7 +255,8 @@ def main():
                             persistent_workers=(args.workers > 0))
         batches = infinite(loader, sampler)
         if is_main:
-            print(f"  data: {len(ds)} ImageNet images under {args.data_root} (ImageFolder)", flush=True)
+            log(f"data: {len(ds)} ImageNet images under {args.data_root} "
+                f"(ImageFolder, workers={args.workers})")
 
     # ---- resume
     start = 0
@@ -230,7 +265,7 @@ def main():
         net.load_state_dict(ck["model"]); ema.load_state_dict(ck["ema"]); opt.load_state_dict(ck["opt"])
         start = ck["step"]
         if is_main:
-            print(f"  resumed @ {start}", flush=True)
+            log(f"resumed @ step {start} from {args.resume}")
 
     model.train()
     t0 = time.time(); run = 0.0
@@ -245,8 +280,11 @@ def main():
             blurred = heat(x0, k).float()
             less_blurred = heat(x0, k - 1).float()
             u = blurred + torch.randn_like(blurred) * config.model.sigma
-        pred = u + model(u, k)
-        loss = ((less_blurred - pred) ** 2).reshape(x0.shape[0], -1).sum(-1).mean()
+        # Keep the DCT heat corruption in FP32, then run the expensive UNet on tensor cores.
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
+            pred = u + model(u, k)
+        error = less_blurred - pred.float()
+        loss = (error ** 2).reshape(x0.shape[0], -1).sum(-1).mean()
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), config.optim.grad_clip)
@@ -256,25 +294,30 @@ def main():
         run += loss.item()
         if is_main and (step + 1) % args.log_every == 0:
             ips = args.log_every * args.batch * world / (time.time() - t0)
-            print(f"[{step+1:>7d}/{args.steps}] loss={run/args.log_every:.2f} lr={lr:.2e} "
-                  f"{ips:.0f} img/s", flush=True)
+            log(f"step={step+1}/{args.steps} loss={run/args.log_every:.2f} lr={lr:.2e} "
+                f"throughput={ips:.1f} img/s")
             run = 0.0; t0 = time.time()
         if is_main and ((step + 1) % args.ckpt_every == 0 or (step + 1) == args.steps):
             torch.save({"model": net.state_dict(), "ema": ema.state_dict(),
                         "opt": opt.state_dict(), "step": step + 1}, args.out)
+            log(f"checkpoint saved: step={step+1} path={args.out}")
         if is_main and (step + 1) % args.sample_every == 0:
             ema.store(net.parameters()); ema.copy_to(net.parameters())
             with torch.no_grad():
                 x0v = x0[:4]
                 kv = torch.full((x0v.shape[0],), K // 2, device=device)
                 bl = heat(x0v, kv).float()
-                rec = (bl + config.model.sigma * torch.randn_like(bl)) + net(bl, kv)
+                noisy_bl = bl + config.model.sigma * torch.randn_like(bl)
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
+                    rec = noisy_bl + net(noisy_bl, kv)
             save_image(torch.cat([x0v, bl, rec.clamp(0, 1)]),
                        f"results/ihdm_imagenet256/step{step+1}.png", nrow=4)
             ema.restore(net.parameters()); net.train()
+            log(f"sample saved: results/ihdm_imagenet256/step{step+1}.png")
 
     if is_main:
-        print("done.", flush=True)
+        log("done.")
+        log_fp.close()
     if is_dist:
         dist.destroy_process_group()
 
