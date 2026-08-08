@@ -21,8 +21,11 @@ Single GPU / no torchrun (falls back automatically):
 --batch is PER-GPU; global batch = per_gpu * nproc_per_node. Scale --lr ~linearly with it.
 """
 import os
+import io
 import sys
+import glob
 import time
+import random
 import argparse
 
 import numpy as np
@@ -30,7 +33,7 @@ from PIL import Image
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 from torchvision import datasets
 from torchvision.utils import save_image
 
@@ -73,6 +76,54 @@ class Preproc:
         return t                                          # (3,H,W) in [0,1]
 
 
+class ParquetImageStream(IterableDataset):
+    """Infinite shuffled stream over HuggingFace-style parquet shards (e.g.
+    benjamin-paine/imagenet-1k-256x256): image column is struct{bytes, path}. Reads bytes with
+    pyarrow (no `datasets` dependency), decodes with PIL. Shards are split disjointly across
+    (DDP rank x DataLoader worker); shuffling is file-order + row-group + a reservoir buffer."""
+
+    def __init__(self, files, transform, image_col="image", rank=0, world=1, seed=0, shuffle_buf=2000):
+        super().__init__()
+        self.files = sorted(files)
+        self.transform = transform
+        self.col = image_col
+        self.rank = rank
+        self.world = world
+        self.seed = seed
+        self.shuffle_buf = shuffle_buf
+
+    def __iter__(self):
+        import pyarrow.parquet as pq
+        info = get_worker_info()
+        wid = info.id if info else 0
+        nw = info.num_workers if info else 1
+        gid = self.rank * nw + wid                       # global stream id
+        gnum = self.world * nw                            # total streams
+        my_files = self.files[gid::gnum]                 # disjoint shard subset
+        rng = random.Random(self.seed + gid)
+
+        def raw_cells():
+            while True:                                   # infinite: reshuffle files each pass
+                order = my_files[:]; rng.shuffle(order)
+                for f in order:
+                    pf = pq.ParquetFile(f)
+                    rgs = list(range(pf.num_row_groups)); rng.shuffle(rgs)
+                    for rg in rgs:
+                        cells = pf.read_row_group(rg, columns=[self.col]).column(self.col).to_pylist()
+                        rng.shuffle(cells)
+                        yield from cells
+
+        if not my_files:                                 # more streams than shards: this one idles
+            return
+        src = raw_cells()                                 # infinite, so priming always succeeds
+        buf = [next(src) for _ in range(self.shuffle_buf)]
+        while True:
+            j = rng.randrange(len(buf))
+            cell = buf[j]; buf[j] = next(src)
+            b = cell["bytes"] if isinstance(cell, dict) else cell
+            yield self.transform(Image.open(io.BytesIO(b))), 0
+
+
 def ddp_setup():
     """Returns (is_dist, rank, world_size, local_rank). No-op single-process if not under torchrun."""
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
@@ -98,7 +149,11 @@ def infinite(loader, sampler):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_root", required=True, help="ImageFolder tree (ImageNet train split)")
+    ap.add_argument("--data_root", required=True,
+                    help="dir of *.parquet shards (HF benjamin-paine/imagenet-1k-256x256) OR an "
+                         "ImageFolder tree (train/<class>/*.jpg). Auto-detected.")
+    ap.add_argument("--image_col", default="image", help="parquet image column (struct{bytes,path})")
+    ap.add_argument("--shuffle_buf", type=int, default=2000, help="parquet reservoir shuffle buffer (per stream)")
     ap.add_argument("--config", default="img_size_256_imagenet",
                     help="configs/ffhq/*: img_size_256_imagenet (589M, ADM-matched)")
     ap.add_argument("--steps", type=int, default=500000)
@@ -145,15 +200,28 @@ def main():
               f"world={world} | per_gpu_batch={args.batch} | global_batch={args.batch*world} | "
               f"lr={config.optim.lr:.1e}", flush=True)
 
-    # ---- streaming data
-    ds = datasets.ImageFolder(args.data_root, transform=Preproc(imsz, hflip=config.data.random_flip))
-    sampler = torch.utils.data.distributed.DistributedSampler(ds, shuffle=True) if is_dist else None
-    loader = DataLoader(ds, batch_size=args.batch, shuffle=(sampler is None), sampler=sampler,
-                        num_workers=args.workers, pin_memory=True, drop_last=True,
-                        persistent_workers=(args.workers > 0))
-    if is_main:
-        print(f"  data: {len(ds)} ImageNet images under {args.data_root}", flush=True)
-    batches = infinite(loader, sampler)
+    # ---- streaming data (auto-detect: parquet shards vs ImageFolder tree)
+    preproc = Preproc(imsz, hflip=config.data.random_flip)
+    parquet_files = sorted(glob.glob(os.path.join(args.data_root, "*.parquet")))
+    if parquet_files:                                     # HF parquet (benjamin-paine/imagenet-1k-256x256)
+        ds = ParquetImageStream(parquet_files, preproc, image_col=args.image_col,
+                                rank=rank, world=world, seed=args.seed, shuffle_buf=args.shuffle_buf)
+        sampler = None                                    # IterableDataset shards internally
+        loader = DataLoader(ds, batch_size=args.batch, num_workers=args.workers,
+                            pin_memory=True, drop_last=True, persistent_workers=(args.workers > 0))
+        batches = iter(loader)                            # already infinite
+        if is_main:
+            print(f"  data: {len(parquet_files)} parquet shards under {args.data_root} "
+                  f"(streaming, shuffle_buf={args.shuffle_buf})", flush=True)
+    else:                                                 # ImageFolder tree of image files
+        ds = datasets.ImageFolder(args.data_root, transform=preproc)
+        sampler = torch.utils.data.distributed.DistributedSampler(ds, shuffle=True) if is_dist else None
+        loader = DataLoader(ds, batch_size=args.batch, shuffle=(sampler is None), sampler=sampler,
+                            num_workers=args.workers, pin_memory=True, drop_last=True,
+                            persistent_workers=(args.workers > 0))
+        batches = infinite(loader, sampler)
+        if is_main:
+            print(f"  data: {len(ds)} ImageNet images under {args.data_root} (ImageFolder)", flush=True)
 
     # ---- resume
     start = 0
