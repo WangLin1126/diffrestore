@@ -28,4 +28,6 @@ hf_token.txt
 !./data/loaders.py
 !./data/__init__.py
 ddrm_backbone/
+ddnm_backbone/
+DiffPIR_backbone/
 docs/figures

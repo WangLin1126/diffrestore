@@ -12,8 +12,9 @@ section for CVPR / NeurIPS / ICLR. Every claim in the title — **scale-matched 
 prior**, **freq-aware reg** — must be defended by a measured experiment.
 
 **Where we stand (gaps that block submission):** `n=16` test images (too small — reject risk);
-one dataset (CelebA-HQ-256 faces only); baselines are DPS + DDRM, both now the *floor* not the
-frontier; the title claim (scale-matched DC) has **no ablation**.
+one dataset (CelebA-HQ-256 faces only); the title claim (scale-matched DC) has **no ablation**.
+Baselines are now DPS · DDRM · **DiffPIR** (all deblur + SR) · **DDNM** (box-SR) at `n=16` — the
+modern-baseline table (A1-3) is done; it still needs to be re-run at 1k and on ImageNet (A1-1/2).
 
 ## A1 — Must-have (desk-reject risk without these)
 
@@ -24,10 +25,11 @@ frontier; the title claim (scale-matched DC) has **no ablation**.
 2. **Second dataset — ImageNet-256.** Port method + all baselines. This is where the *non-hot
    prior* claim is actually on trial (faces are low-entropy; natural images are the honest test).
    Largest compute block — freeze the eval pipeline and baseline harness before starting, or redo.
-3. **Modern baselines under identical operator/noise/test-set.** Add **DiffPIR** (novelty-defining
-   — it is also HQS+diffusion, so our scale-matched measurement + non-hot prior must be the
-   articulated, *measured* difference), **DDNM**, **ΠGDM** (closest to our closed-form Wiener DC);
-   RED-diff optional. DDRM/DPS stay as the floor.
+3. **Modern baselines under identical operator/noise/test-set.** ✅ *Done at n=16 (2026-08-08):*
+   **DiffPIR** (novelty-defining, also HQS+diffusion — all deblur + both SR operators; wins LPIPS
+   everywhere) and **DDNM** (box-SR; NaN on our strong-Gaussian, DDRM covers that slot), both on the
+   shared `ffhq_10m` prior, our metrics. **Remaining:** **ΠGDM** (closest to our closed-form Wiener
+   DC); RED-diff optional. Then re-run the whole table at 1k / ImageNet (A1-1/2). DDRM/DPS = floor.
 
 ## A2 — Strongly expected (borderline → clear accept)
 
@@ -57,6 +59,12 @@ frontier; the title claim (scale-matched DC) has **no ablation**.
   DDRM caption (currently only the SR caption states it). General rule: each baseline must reproduce
   its own *published* number on a standard operator before we trust it on ours (DiffPIR/DDNM/ΠGDM
   each have their own load-bearing settings — step count, guidance scale, schedule).
+- **DiffPIR / DDNM load-bearing settings (learned 2026-08-08, carry into the 1k/ImageNet re-run):**
+  DiffPIR SR `main_ddpir_sisr.py` *sweeps* λ (`range(2,13)`) and loops `k_num=8` (later k-indices
+  corrupt; only `_k0` is clean) — use `DIFFPIR_LAMBDA_MULT` (×5) + `DIFFPIR_TAG`, score `_k0`. All
+  baselines: noise via the `σ_y/2` [0,1]→[−1,1] doubling; DiffPIR uses circular boundary + native
+  `st=0` SR grid; score DDNM against its own reordered `Apy/orig_{i}.png`. Env patches (guarded
+  `hdf5storage`/`motionblur`/`tensorboard`, `interp2d`→`RegularGridInterpolator`) live in the backbones.
 - **γ / hyperparameter tuning on a held-out tuning subset, never the 1k eval set** (else it reads as
   test-set tuning). Same discipline for every baseline: tune all methods on the same split, or none.
 - Report the current tables' numbers as they stand (already run at 20 steps, so the *existing*
