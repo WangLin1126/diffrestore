@@ -29,3 +29,6 @@ hf_token.txt
 !./data/__init__.py
 ddrm_backbone/
 docs/figures
+.codex
+skills/
+qz/
