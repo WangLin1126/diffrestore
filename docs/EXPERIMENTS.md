@@ -13,6 +13,7 @@ phase in `ROADMAP.md`.*
 | Framework + numerical gates | ✅ 8 gates pass (deblur/CT/SR; 6 @ ~1e-15) |
 | Priors (CelebA-HQ 128 / FFHQ-256) | ✅ 80k / 60k (loss 0.089) |
 | Modalities | ✅ Gaussian · motion · defocus · **super-res**; ◐ CT (PoC, tuning open) |
+| Modern baselines (A1-3) | ✅ DPS · DDRM · DiffPIR (all deblur + SR) · DDNM (box-SR); ImageNet/1k pending |
 | Core ablation (scale-matching essential) | ✅ +4.8 dB with vs −3.8 dB without (8.6 dB swing) |
 
 ## 1. Setup
@@ -76,6 +77,34 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 ---
 
 ## 9. Chronological log (newest first)
+
+- **2026-08-08 — Modern baselines DiffPIR + DDNM (A1-3), shared `ffhq_10m` prior, our metrics.** Both
+  reuse our `ffhq_10m.pt`: DiffPIR loads it directly (`diffusion_ffhq_10m`); DDNM via a new `openai`-type
+  config `configs/ffhq_gd.yml` (canonical `celeba_hq.ckpt` URL is dead/403), loading 0 missing keys — so
+  all methods share one face prior. All 100 steps, on the 16 CelebA-HQ, operators + noise matched to ours
+  (noise via the `σ_y/2` [0,1]→[−1,1] doubling); metrics recomputed with `utils.metrics` (PSNR reproduces
+  each tool's self-report). Added to `tab:{gauss,motion,defocus,sr}`.
+
+  | task (σ_y) | DiffPIR  P/S/**L** | matched operator |
+  |---|---|---|
+  | Motion 0.05/0.10/0.20   | 28.87/.784/**.078** · 27.53/.761/**.104** · 26.25/.740/**.140** | exact Levin09 #0 |
+  | Gaussian 0.05/0.10/0.20 | 26.21/.744/**.166** · 25.56/.727/**.181** · 24.72/.704/**.195** | σ=4 kernel |
+  | Defocus 0.05/0.10/0.20  | 26.88/.761/**.147** · 25.94/.734/**.170** · 24.80/.704/**.182** | our disk kernel |
+  | SR box 0.01/0.05        | 27.43/.789/**.111** · 26.81/.760/**.148** | 4×4 box |
+  | SR aa 0.01/0.05         | 26.14/.740/**.170** · 24.61/.698/**.192** | Gauss(σ4)⊛box₄ |
+
+  DDNM SR (`sr_averagepooling` = exact box, svd_based path, η=0.85): 0.01 **28.38/.828/.167**, 0.05
+  **27.78/.809/.190** — best SSIM@0.05, ≈SMDC PSNR. **Finding (everywhere):** SMDC/IHDM leads distortion
+  (PSNR+SSIM); **DiffPIR wins LPIPS in every block** (beats DPS on both metrics; beats DDRM/DDNM on SR).
+  Unlike DDRM, DiffPIR's FFT solver applies to non-separable motion/defocus *and* to aa-SR (DDNM's
+  avgpool-SVD cannot). **Left out:** DDNM Gaussian — its SVD `Deblurring` uses unzeroed singulars in the
+  noisy `Lambda`; our σ=4 kernel's ~1e-30 singulars → NaN (DDRM covers the separable-Gaussian slot).
+  **Gotchas (recipes in memory):** DiffPIR SR script sweeps λ over `range(2,13)` and loops `k_num=8`
+  (state degrades; `_k0` is clean) with a kernel-blind output dir → added `DIFFPIR_{LAMBDA_MULT(×5),TAG}`,
+  score `_k0`; env fixes: guarded `hdf5storage`/`motionblur`/`tensorboard`, `interp2d`→`RegularGridInterpolator`
+  (SciPy 1.14). DiffPIR uses circular boundary + native `st=0` SR grid (1-px offset) — noted in captions;
+  DDNM scored vs its own `Apy/orig_{i}.png` (its loader reorders). Abstract/Setup name DPS/DDRM/DiffPIR/DDNM.
+  [[smdc-project]] [[ddrm-baseline-repro]]
 
 - **2026-08-05 — Per-noise reg γ for the deblur tables (fixes the uniform γ=0.5 that violated the noise rule).**
   Swept γ∈{0,0.25,0.5,1,2} × σ_y∈{0.05,0.10,0.20} for Gaussian(+HQS) and motion(+CG), n=16, on the
