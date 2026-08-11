@@ -15,13 +15,13 @@ Launch (remote, N GPUs on one node) -- DDP via torchrun (recommended at ADM scal
         --data_root /data/imagenet256/train --batch 16 --steps 500000 \
         --out checkpoint/ihdm/imagenet256.pth
 
-torchrun --standalone --nproc_per_node=4 \
+torchrun --standalone --nproc_per_node=8 \
     scripts/train_ihdm_imagenet.py \
     --data_root data/imagenet-1k-256x256/data/train \
-    --batch 32 --lr 8e-5 --steps 2000000 \
-    --workers 8 --shuffle_buf 512 --grad_ckpt \
+    --batch 48 --lr 8e-5 --steps 2000000 \
+    --workers 4 --shuffle_buf 1024 --grad_ckpt \
     --precision bf16 --fused_adam \
-    --out checkpoint/ihdm/imagenet256.pth
+    --out checkpoint/ihdm/imagenet256.pth --resume checkpoint/ihdm/imagenet256.pth
 
 Single GPU / no torchrun (falls back automatically):
     python scripts/train_ihdm_imagenet.py --data_root /data/imagenet256/train --batch 8 --device cuda:0
@@ -166,6 +166,10 @@ def main():
                     help="configs/ffhq/*: img_size_256_imagenet (589M, ADM-matched)")
     ap.add_argument("--steps", type=int, default=500000)
     ap.add_argument("--batch", type=int, default=16, help="PER-GPU batch; global = batch*world_size")
+    ap.add_argument("--global_batch", type=int, default=None,
+                    help="global samples/step for heterogeneous per-rank batches (logging only)")
+    ap.add_argument("--ddp_loss_weight", type=float, default=1.0,
+                    help="multiply local mean loss before DDP gradient averaging")
     ap.add_argument("--lr", type=float, default=None, help="override config lr (scale ~linearly w/ global batch)")
     ap.add_argument("--workers", type=int, default=8, help="DataLoader workers per process")
     ap.add_argument("--grad_ckpt", action="store_true",
@@ -180,6 +184,8 @@ def main():
                     help="rank-0 runtime log; appended so resumed runs keep their history")
     ap.add_argument("--ckpt_every", type=int, default=5000)
     ap.add_argument("--sample_every", type=int, default=10000)
+    ap.add_argument("--sample_dir", default="results/ihdm_imagenet256",
+                    help="rank-0 sample directory (set per run to avoid output collisions)")
     ap.add_argument("--out", default="checkpoint/ihdm/imagenet256.pth")
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--resume", default=None)
@@ -196,7 +202,7 @@ def main():
     set_seed(args.seed + rank)                            # decorrelate per-rank augmentation/noise
     if is_main:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-        os.makedirs("results/ihdm_imagenet256", exist_ok=True)
+        os.makedirs(args.sample_dir, exist_ok=True)
         os.makedirs(os.path.dirname(args.log_file) or ".", exist_ok=True)
         log_fp = open(args.log_file, "a", buffering=1)
     else:
@@ -228,8 +234,10 @@ def main():
     heat = mutils.create_forward_process(config, config.device)   # DCTBlur on device
     if is_main:
         n_params = sum(p.numel() for p in net.parameters()) / 1e6
+        global_batch = args.global_batch or args.batch * world
         log(f"IHDM-ImageNet [{args.config}]: {n_params:.1f}M params | K={K} | "
-            f"world={world} | per_gpu_batch={args.batch} | global_batch={args.batch*world} | "
+            f"world={world} | per_gpu_batch={args.batch} | global_batch={global_batch} | "
+            f"ddp_loss_weight={args.ddp_loss_weight:.4f} | "
             f"lr={config.optim.lr:.1e} | precision={args.precision} | "
             f"fused_adam={args.fused_adam} | grad_ckpt={args.grad_ckpt} | "
             f"steps={args.steps} | output={args.out}")
@@ -286,14 +294,15 @@ def main():
         error = less_blurred - pred.float()
         loss = (error ** 2).reshape(x0.shape[0], -1).sum(-1).mean()
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        (loss * args.ddp_loss_weight).backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), config.optim.grad_clip)
         opt.step()
         ema.update(net.parameters())
 
         run += loss.item()
         if is_main and (step + 1) % args.log_every == 0:
-            ips = args.log_every * args.batch * world / (time.time() - t0)
+            global_batch = args.global_batch or args.batch * world
+            ips = args.log_every * global_batch / (time.time() - t0)
             log(f"step={step+1}/{args.steps} loss={run/args.log_every:.2f} lr={lr:.2e} "
                 f"throughput={ips:.1f} img/s")
             run = 0.0; t0 = time.time()
@@ -311,9 +320,9 @@ def main():
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
                     rec = noisy_bl + net(noisy_bl, kv)
             save_image(torch.cat([x0v, bl, rec.clamp(0, 1)]),
-                       f"results/ihdm_imagenet256/step{step+1}.png", nrow=4)
+                       os.path.join(args.sample_dir, f"step{step+1}.png"), nrow=4)
             ema.restore(net.parameters()); net.train()
-            log(f"sample saved: results/ihdm_imagenet256/step{step+1}.png")
+            log(f"sample saved: {os.path.join(args.sample_dir, f'step{step+1}.png')}")
 
     if is_main:
         log("done.")
