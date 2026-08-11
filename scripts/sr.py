@@ -215,9 +215,8 @@ def cmd_freqreg(args):
                     x = P.smdc_cg(A, prior, lambda tn, mu: lr_sch.apply_K(y, tn), times, wp, wy0, N,
                                   x_init=x_init, reg=reg, cg_iters=args.cg_iters)
                 P.add_scores(S, x, x0, dev)
-                if k == 0:
-                    d = os.path.join(args.out, f"sy{sy:g}_reg{gamma:g}"); os.makedirs(d, exist_ok=True)
-                    P.save_img(os.path.join(d, "00000.png"), x)
+                d = os.path.join(args.out, f"sy{sy:g}_reg{gamma:g}", "recon"); os.makedirs(d, exist_ok=True)
+                P.save_img(os.path.join(d, f"{k:05d}.png"), x)
             m = P.mean_scores(S)
             print(f"{sy:>7.3g} {gamma:>8.3g} | {m['out']:>6.2f} {m['ssim']:>6.3f} {m['lpips']:>6.3f}", flush=True)
 

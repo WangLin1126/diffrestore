@@ -139,7 +139,7 @@ def cmd_restore(args):
     os.makedirs(os.path.join(args.out, "recon"), exist_ok=True)
     prior, sch, H = P.build_prior(args, tf, dev)
     times = list(range(sch.num_levels - 1, -1, -1))
-    A, _ = build_operator(args.operator, H, tf, dev, dt, args.blur_sigma, args.kernel_npy)
+    A, an = build_operator(args.operator, H, tf, dev, dt, args.blur_sigma, args.kernel_npy)
     x0 = P.load_stack(args.clean_dir, H, args.n, dev)
     ys = P.load_stack(args.observation_dir, H, args.n, dev)
 
@@ -147,14 +147,15 @@ def cmd_restore(args):
         wp = args.prior_weight / args.delta ** 2
         wy0 = args.data_weight / args.sigma_y ** 2
         N = sch.num_levels - 1
+        reg = P.make_freq_reg((1.0 - an).clamp_min(0.0), args.freq_reg, wp)   # freq-aware CG reg (gamma)
         print(f"  MOTION-CG prior={args.prior} res={H} K={N} cg_iters={args.cg_iters} "
-              f"(spatial reflect A, exact adjoint, no FFT)", flush=True)
+              f"freq_reg={args.freq_reg} (spatial reflect A, exact adjoint, no FFT)", flush=True)
         S = P.new_scores("in", "out", "ssim", "lpips", "mc")
         for k in range(x0.shape[0]):
             xi, y = x0[k:k + 1], ys[k:k + 1]
             with torch.no_grad():
                 x = P.smdc_cg(A, prior, lambda tn, mu: sch.apply_K(y, tn), times, wp, wy0, N,
-                              x_init=sch.apply_K(y, times[0]), cg_iters=args.cg_iters)
+                              x_init=sch.apply_K(y, times[0]).clamp(-1, 1), reg=reg, cg_iters=args.cg_iters)
             P.save_img(os.path.join(args.out, "recon", f"{k:05d}.png"), x)
             P.add_scores(S, x, xi, dev, y=y, A=A)
         m = P.mean_scores(S)

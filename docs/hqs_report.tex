@@ -17,6 +17,7 @@
 \newcommand{\y}{\mathbf{y}}
 \newcommand{\bmu}{\bm{\mu}}
 \newcommand{\I}{\mathbf{I}}
+\newcommand{\pmstd}[1]{\ensuremath{{\scriptscriptstyle\,\pm#1}}}  % compact std for PSNR mean$\pm$std
 \DeclareMathOperator*{\argmin}{arg\,min}
 
 \title{\textbf{Scale-Matched Data Consistency for Non-Hot Diffusion Priors:\\
@@ -29,7 +30,8 @@ An HQS Framework for Linear Image Restoration}}
 \begin{abstract}
 We present an image-restoration method that couples a \emph{non-hot} diffusion prior. The forward blur operator of the prior, $\K_t$, and the measurement operator $\A$
 are simultaneously diagonalized in a fixed orthogonal transform $\Phimat$. We give the problem statement, the algorithm, and numerical results on held-out CelebA-HQ-256 for
-Gaussian, motion, and defocus deblurring, benchmarked against DPS, DDRM, and DiffPIR.
+Gaussian, motion, and defocus deblurring (and $\times4$ super-resolution), benchmarked at $n{=}200$
+against DPS, DDRM, DiffPIR, and DDNM.
 \end{abstract}
 
 \section{Problem definition}
@@ -273,17 +275,22 @@ $\mathcal{O}(d\log d)$ and exact. The method never differentiates the prior.
 \label{sec:results}
 
 \paragraph{Setup.}
-Held-out CelebA-HQ-256, $n=16$ images, noise
-$\sigma_y=0.05$. Priors: \emph{COLD-DIFF} and \emph{IHDM-211M}. Baselines:
-Diffusion Posterior Sampling (DPS), DDRM (separable operators only), and DiffPIR (NFE${=}100$,
-FFT data consistency). Metrics:
-PSNR$\uparrow$, SSIM$\uparrow$, LPIPS$\downarrow$, measurement consistency
+Held-out CelebA-HQ-256, $n=200$ images (the first 200 of the standard validation split); every method
+reconstructs the \emph{identical} set from the same observations, with noise $\sigma_y\in\{0.05,0.10,0.20\}$
+(SR: $\{0.01,0.05\}$). Because DPS is a $\sim$1000-NFE sampler, it is evaluated on the first 100 of these
+200 (a strict subset). Priors: \emph{COLD-DIFF} and \emph{IHDM-211M}. Baselines:
+Diffusion Posterior Sampling (DPS), DDRM (separable operators only), DiffPIR (NFE${=}100$,
+FFT data consistency), and DDNM (super-res). Metrics:
+PSNR$\uparrow$ (reported as mean$\pm$std), SSIM$\uparrow$, LPIPS$\downarrow$, measurement consistency
 $\mathrm{MC}=\|\y-\A\hat\x\|/\|\y\|\;\downarrow$.
 
 \paragraph{Gaussian / heat deblur.}
 With $\A$ a DCT-diagonal Gaussian blur, $\A$ and the heat prior
-share the DCT basis, so~\eqref{eq:wiener} is exact. The non-hot HQS prior wins distortion
-by a wide margin (Table~\ref{tab:gauss}); the diffusion baselines win perceptual LPIPS, DiffPIR best.
+share the DCT basis, so~\eqref{eq:wiener} is exact. The non-hot HQS prior leads distortion at
+low-to-moderate noise (Table~\ref{tab:gauss}); the operator-matched DDRM is competitive and edges
+ahead at the highest noise ($\sigma_y{=}0.20$), while the diffusion baselines win perceptual LPIPS
+(DiffPIR best). On the non-separable motion/defocus operators, where DDRM does not apply, IHDM leads
+distortion across all noise levels.
 
 \begin{table}[h]
 \centering
@@ -303,31 +310,31 @@ block.}
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
 \multirow{7}{*}{0.05}
- & Observation & 22.85 & 0.529 & 0.565 & 0.122 \\
- & TV          & 26.04 & 0.742 & 0.364 & 0.093 \\
- & cold + HQS  & 25.80 & 0.692 & 0.442 & 0.092 \\
- & IHDM + HQS ($\gamma{=}0.25$) & \textbf{27.14} & \textbf{0.779} & 0.355 & 0.093 \\
- & DPS         & 23.84 & 0.678 & 0.175 & 0.102 \\
- & DDRM        & 26.78 & 0.778 & 0.238 & -- \\
- & DiffPIR     & 26.21 & 0.744 & \textbf{0.166} & -- \\
+ & Observation & 23.11\pmstd{1.61} & 0.523 & 0.565 & 0.116 \\
+ & TV          & 26.16\pmstd{2.09} & 0.732 & 0.367 & 0.091 \\
+ & cold + HQS  & 25.92\pmstd{1.81} & 0.684 & 0.437 & 0.091 \\
+ & IHDM + HQS ($\gamma{=}0.25$) & \textbf{27.30}\pmstd{2.37} & \textbf{0.771} & 0.347 & 0.091 \\
+ & DPS         & 24.12\pmstd{1.98} & 0.669 & 0.175 & 0.102 \\
+ & DDRM        & 26.88\pmstd{2.27} & 0.768 & 0.227 & -- \\
+ & DiffPIR     & 26.28\pmstd{2.14} & 0.732 & \textbf{0.162} & -- \\
 \midrule
 \multirow{7}{*}{0.10}
- & Observation & 21.48 & 0.352 & 0.719 & 0.198 \\
- & TV          & 25.23 & 0.714 & 0.408 & 0.183 \\
- & cold + HQS  & 25.11 & 0.683 & 0.460 & 0.181 \\
- & IHDM + HQS ($\gamma{=}0$) & \textbf{26.47} & 0.756 & 0.380 & 0.182 \\
- & DPS         & 23.28 & 0.658 & 0.186 & 0.191 \\
- & DDRM        & 26.34 & \textbf{0.765} & 0.242 & -- \\
- & DiffPIR     & 25.56 & 0.727 & \textbf{0.181} & -- \\
+ & Observation & 21.70\pmstd{1.18} & 0.344 & 0.726 & 0.192 \\
+ & TV          & 25.33\pmstd{1.98} & 0.702 & 0.411 & 0.179 \\
+ & cold + HQS  & 25.25\pmstd{1.74} & 0.674 & 0.455 & 0.178 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{26.60}\pmstd{2.23} & 0.746 & 0.373 & 0.178 \\
+ & DPS         & 23.59\pmstd{1.88} & 0.648 & 0.187 & 0.191 \\
+ & DDRM        & 26.40\pmstd{2.17} & \textbf{0.754} & 0.235 & -- \\
+ & DiffPIR     & 25.65\pmstd{2.02} & 0.714 & \textbf{0.176} & -- \\
 \midrule
 \multirow{7}{*}{0.20}
- & Observation & 18.53 & 0.188 & 0.927 & 0.349 \\
- & TV          & 23.44 & 0.662 & 0.481 & 0.348 \\
- & cold + HQS  & 23.99 & 0.664 & 0.474 & 0.341 \\
- & IHDM + HQS ($\gamma{=}0$) & 25.41 & 0.724 & 0.396 & 0.342 \\
- & DPS         & 22.57 & 0.632 & 0.201 & 0.351 \\
- & DDRM        & \textbf{25.66} & \textbf{0.748} & 0.251 & -- \\
- & DiffPIR     & 24.72 & 0.704 & \textbf{0.195} & -- \\
+ & Observation & 18.68\pmstd{0.63} & 0.180 & 0.937 & 0.342 \\
+ & TV          & 23.60\pmstd{1.73} & 0.648 & 0.482 & 0.341 \\
+ & cold + HQS  & 24.09\pmstd{1.61} & 0.653 & 0.467 & 0.335 \\
+ & IHDM + HQS ($\gamma{=}0$) & 25.47\pmstd{2.05} & 0.709 & 0.393 & 0.336 \\
+ & DPS         & 22.87\pmstd{1.73} & 0.621 & 0.203 & 0.351 \\
+ & DDRM        & \textbf{25.73}\pmstd{2.06} & \textbf{0.737} & 0.245 & -- \\
+ & DiffPIR     & 24.91\pmstd{1.92} & 0.692 & \textbf{0.187} & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -355,7 +362,7 @@ the full frame without ringing; only DPS, whose guidance uses a circular forward
 \begin{table}[h]
 \centering
 \caption{Motion deblur (Levin09~\#1) on realistic \textbf{reflect-boundary} observations, full
-frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. IHDM, cold and TV all use
+frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS: first 100); PSNR as mean$\pm$std. IHDM, cold and TV all use
 the spatial-CG data step (Eq.~\ref{eq:cg}); DPS is a circulant baseline that inherits the
 boundary ring. IHDM uses its best per-noise reg ($\gamma{=}0.5$ at $\sigma_y{=}0.05$, $\gamma{=}0$ at
 $0.10/0.20$): the notch speckle the reg suppresses is strongest at low noise, so unlike SR the
@@ -369,31 +376,31 @@ omitted). Bold = best PSNR/SSIM, and best LPIPS, per noise block.}
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
 \multirow{7}{*}{0.05}
- & Observation & 24.25 & 0.581 & 0.358 & 0.117 \\
- & TV          & 28.34 & 0.800 & 0.154 & 0.086 \\
- & cold + CG   & 22.66 & 0.440 & 0.491 & 0.061 \\
- & IHDM + CG ($\gamma{=}0.5$) & \textbf{30.43} & \textbf{0.847} & 0.124 & 0.085 \\
- & DPS         & 24.90 & 0.718 & 0.168 & 0.122 \\
+ & Observation & 24.41\pmstd{1.68} & 0.572 & 0.358 & 0.113 \\
+ & TV          & 28.41\pmstd{1.95} & 0.792 & 0.159 & 0.084 \\
+ & cold + CG   & 22.64\pmstd{0.48} & 0.433 & 0.506 & 0.060 \\
+ & IHDM + CG ($\gamma{=}0.5$) & \textbf{30.59}\pmstd{2.17} & \textbf{0.843} & 0.122 & 0.083 \\
+ & DPS         & 25.16\pmstd{2.01} & 0.709 & 0.169 & 0.120 \\
  & DDRM        & \multicolumn{4}{c}{-- \; (non-separable kernel; see text)} \\
- & DiffPIR     & 28.87 & 0.784 & \textbf{0.078} & -- \\
+ & DiffPIR     & 29.03\pmstd{1.77} & 0.777 & \textbf{0.078} & -- \\
 \midrule
 \multirow{7}{*}{0.10}
- & Observation & 22.49 & 0.396 & 0.536 & 0.193 \\
- & TV          & 26.64 & 0.751 & 0.238 & 0.175 \\
- & cold + CG   & 22.05 & 0.399 & 0.542 & 0.142 \\
- & IHDM + CG ($\gamma{=}0$) & \textbf{28.41} & \textbf{0.796} & 0.246 & 0.172 \\
- & DPS         & 24.49 & 0.701 & 0.173 & 0.198 \\
+ & Observation & 22.62\pmstd{1.15} & 0.386 & 0.543 & 0.188 \\
+ & TV          & 26.70\pmstd{1.96} & 0.739 & 0.248 & 0.172 \\
+ & cold + CG   & 22.04\pmstd{0.55} & 0.390 & 0.558 & 0.140 \\
+ & IHDM + CG ($\gamma{=}0$) & \textbf{28.54}\pmstd{2.16} & \textbf{0.788} & 0.241 & 0.169 \\
+ & DPS         & 24.70\pmstd{1.91} & 0.690 & 0.176 & 0.198 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
- & DiffPIR     & 27.53 & 0.761 & \textbf{0.104} & -- \\
+ & DiffPIR     & 27.66\pmstd{1.93} & 0.750 & \textbf{0.104} & -- \\
 \midrule
 \multirow{7}{*}{0.20}
- & Observation & 19.07 & 0.219 & 0.790 & 0.342 \\
- & TV          & 25.02 & 0.703 & 0.328 & 0.334 \\
- & cold + CG   & 22.10 & 0.419 & 0.503 & 0.302 \\
- & IHDM + CG ($\gamma{=}0$) & \textbf{26.79} & \textbf{0.761} & 0.328 & 0.330 \\
- & DPS         & 23.74 & 0.673 & 0.184 & 0.347 \\
+ & Observation & 19.15\pmstd{0.58} & 0.208 & 0.803 & 0.336 \\
+ & TV          & 25.05\pmstd{1.79} & 0.686 & 0.338 & 0.329 \\
+ & cold + CG   & 22.00\pmstd{0.92} & 0.407 & 0.514 & 0.298 \\
+ & IHDM + CG ($\gamma{=}0$) & \textbf{26.83}\pmstd{2.08} & \textbf{0.748} & 0.324 & 0.325 \\
+ & DPS         & 23.91\pmstd{1.78} & 0.659 & 0.191 & 0.349 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
- & DiffPIR     & 26.25 & 0.740 & \textbf{0.140} & -- \\
+ & DiffPIR     & 26.37\pmstd{1.95} & 0.726 & \textbf{0.138} & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -433,15 +440,15 @@ closed-form per-frequency DCT-Wiener data step~\eqref{eq:wiener} as Gaussian---e
 iteration-free. This is the general rule: \textbf{symmetric operators} (Gaussian, defocus; also
 symmetric anti-alias filters) admit the closed-form DCT-HQS step, whereas \textbf{asymmetric
 operators} (motion) require spatial CG. Table~\ref{tab:defocus} reports the full comparison across
-noise. IHDM$+$HQS is the best full-frame method at every level ($22.80\!\to\!27.81$\,dB at
-$\sigma_y=0.05$, $+5.0$\,dB), beating the TV prior by $1.7$\,dB and DPS by $4.6$\,dB on distortion;
+noise. IHDM$+$HQS is the best full-frame method at every level ($23.04\!\to\!27.97$\,dB at
+$\sigma_y=0.05$, $+4.9$\,dB), beating the TV prior by $1.7$\,dB and DPS by $4.4$\,dB on distortion;
 the diffusion baselines again win perceptual LPIPS (DiffPIR best). The closed-form solve matches the spatial-CG result to
 $0.01$\,dB, as it must.
 
 \begin{table}[h]
 \centering
 \caption{Defocus deblur (disk PSF, radius $7$ / $15\times15$) on realistic \textbf{reflect-boundary}
-observations, full frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=16$. The disk
+observations, full frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS: first 100); PSNR as mean$\pm$std. The disk
 is DCT-diagonal, so IHDM, cold and TV all use the closed-form DCT-HQS data step~\eqref{eq:wiener}
 (no CG); DPS is a circulant baseline. DiffPIR (NFE${=}100$, same FFHQ prior, exact disk PSF) is
 FFT-based, so unlike DDRM it \emph{does} apply to this non-separable PSF; circular-boundary data
@@ -452,31 +459,31 @@ consistency, $\sigma_0{=}\sigma_y/2$ (MC omitted). Bold = best PSNR and best LPI
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
 \multirow{7}{*}{0.05}
- & Observation & 22.80 & 0.520 & 0.551 & 0.117 \\
- & TV          & 26.16 & 0.743 & 0.325 & 0.093 \\
- & cold + HQS  & 24.10 & 0.510 & 0.490 & 0.089 \\
- & IHDM + HQS ($\gamma{=}0$) & \textbf{27.81} & \textbf{0.794} & 0.313 & 0.092 \\
- & DPS         & 23.23 & 0.659 & 0.186 & 0.117 \\
+ & Observation & 23.04\pmstd{1.62} & 0.513 & 0.551 & 0.113 \\
+ & TV          & 26.25\pmstd{2.06} & 0.733 & 0.332 & 0.091 \\
+ & cold + HQS  & 24.17\pmstd{1.05} & 0.502 & 0.493 & 0.087 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{27.97}\pmstd{2.37} & \textbf{0.788} & 0.307 & 0.090 \\
+ & DPS         & 23.57\pmstd{1.91} & 0.653 & 0.184 & 0.115 \\
  & DDRM        & \multicolumn{4}{c}{-- \; (non-separable disk PSF; see text)} \\
- & DiffPIR     & 26.88 & 0.761 & \textbf{0.147} & -- \\
+ & DiffPIR     & 27.04\pmstd{2.12} & 0.749 & \textbf{0.140} & -- \\
 \midrule
 \multirow{7}{*}{0.10}
- & Observation & 21.45 & 0.346 & 0.706 & 0.195 \\
- & TV          & 25.16 & 0.711 & 0.390 & 0.182 \\
- & cold + HQS  & 24.50 & 0.578 & 0.447 & 0.178 \\
- & IHDM + HQS ($\gamma{=}0$) & \textbf{26.64} & \textbf{0.759} & 0.371 & 0.181 \\
- & DPS         & 22.98 & 0.650 & 0.191 & 0.197 \\
+ & Observation & 21.65\pmstd{1.20} & 0.338 & 0.714 & 0.190 \\
+ & TV          & 25.26\pmstd{1.96} & 0.699 & 0.396 & 0.178 \\
+ & cold + HQS  & 24.63\pmstd{1.40} & 0.570 & 0.445 & 0.174 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{26.79}\pmstd{2.25} & \textbf{0.750} & 0.364 & 0.177 \\
+ & DPS         & 23.29\pmstd{1.83} & 0.642 & 0.191 & 0.197 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
- & DiffPIR     & 25.94 & 0.734 & \textbf{0.170} & -- \\
+ & DiffPIR     & 26.01\pmstd{2.03} & 0.721 & \textbf{0.162} & -- \\
 \midrule
 \multirow{7}{*}{0.20}
- & Observation & 18.53 & 0.185 & 0.916 & 0.347 \\
- & TV          & 23.91 & 0.672 & 0.449 & 0.343 \\
- & cold + HQS  & 24.00 & 0.631 & 0.427 & 0.337 \\
- & IHDM + HQS ($\gamma{=}0$) & \textbf{25.49} & \textbf{0.725} & 0.394 & 0.340 \\
- & DPS         & 22.46 & 0.630 & 0.203 & 0.351 \\
+ & Observation & 18.66\pmstd{0.64} & 0.177 & 0.927 & 0.340 \\
+ & TV          & 24.04\pmstd{1.79} & 0.658 & 0.454 & 0.337 \\
+ & cold + HQS  & 24.10\pmstd{1.56} & 0.621 & 0.419 & 0.331 \\
+ & IHDM + HQS ($\gamma{=}0$) & \textbf{25.57}\pmstd{2.07} & \textbf{0.711} & 0.391 & 0.334 \\
+ & DPS         & 22.77\pmstd{1.71} & 0.620 & 0.204 & 0.352 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
- & DiffPIR     & 24.80 & 0.704 & \textbf{0.182} & -- \\
+ & DiffPIR     & 25.02\pmstd{1.93} & 0.694 & \textbf{0.182} & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -493,7 +500,7 @@ product of the $1$-D SVD, which is exactly the structure DDRM's SVD replacement 
 inverts our operator to machine precision (the exact $H_1$ is verified against
 $\A$ to $4\times10^{-15}$). Table~\ref{tab:sr} reports both at matched absolute noise
 ($\sigma_0=\sigma_y/2$). SMDC$+$IHDM leads PSNR/SSIM at low noise ($\sigma_y{=}0.01$) while DDRM,
-with its stochastic hot-diffusion prior, matches or leads on PSNR at $\sigma_y{=}0.05$ and wins the
+with its stochastic hot-diffusion prior, edges ahead on PSNR/SSIM at $\sigma_y{=}0.05$; DiffPIR wins the
 perceptual LPIPS at both levels---the same distortion/perception split we see against DPS.
 Crucially this comparison is \emph{only} possible for separable operators: the Levin motion kernel
 and the disk defocus PSF are non-separable, so their full SVD is intractable and DDRM does not apply
@@ -502,9 +509,10 @@ and the disk defocus PSF are non-separable, so their full SVD is intractable and
 To meet DDRM on \emph{its} home ground we also add the \emph{pure} box downsample (avg-pool, no
 anti-alias), i.e.\ DDRM's native \texttt{sr4} degradation (Table~\ref{tab:sr}, lower block). Dropping
 the anti-alias pre-blur destroys less high-frequency content, so every method starts from a sharper
-bicubic anchor ($27.16$ vs $23.30$\,dB at $\sigma_y{=}0.01$) and the null space is milder; the
-distortion/perception split nonetheless persists---SMDC$+$IHDM leads PSNR/SSIM at both noise levels
-($+0.76$/$+0.49$\,dB over DDRM) while DDRM wins LPIPS. The reg's role also flips with the operator:
+bicubic anchor ($27.34$ vs $23.58$\,dB at $\sigma_y{=}0.01$) and the null space is milder; the
+distortion/perception split nonetheless persists---SMDC$+$IHDM leads PSNR/SSIM at low noise
+($+0.80$\,dB over DDRM at $\sigma_y{=}0.01$), while at $\sigma_y{=}0.05$ the operator-matched DDNM
+edges it out on distortion; DiffPIR wins LPIPS throughout. The reg's role also flips with the operator:
 on the milder box null space the low-noise cell prefers $\gamma{=}0$ (flat, noise-free), whereas at
 $\sigma_y{=}0.05$ the box's poorer transition band makes speckle control pay off strongly---the sweep
 is unimodal with a broad peak at $\gamma{=}4$ ($27.44\!\to\!\mathbf{27.80}$\,dB, LPIPS
@@ -514,7 +522,7 @@ low-pass with more transition-band noise to suppress.
 
 \begin{table}[h]
 \centering
-\caption{Super-resolution ($\times4$), held-out CelebA-HQ-256, $n=16$, across noise $\sigma_y$
+\caption{Super-resolution ($\times4$), held-out CelebA-HQ-256, $n=200$, across noise $\sigma_y$
 (absolute std on $[-1,1]$), on two decimation operators: the anti-alias Gaussian $+$ avg-pool used
 throughout, and a \emph{pure} box downsample (avg-pool, no anti-alias)---DDRM's native \texttt{sr4}
 task. SMDC uses its best reg per cell (anti-alias: $\gamma{=}0.5$ at $0.01$, $\gamma{=}0$ at $0.05$;
@@ -531,28 +539,28 @@ avg-pool). Bold = best PSNR/SSIM/LPIPS per block (over the reconstructions).}
 Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
 \midrule
 \multirow{8}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
- & \multirow{4}{*}{0.01} & Observation (bicubic) & 23.30 & 0.681 & 0.539 \\
- & & SMDC + IHDM ($\gamma{=}0.5$) & \textbf{27.19} & \textbf{0.785} & 0.348 \\
- & & DDRM & 26.66 & 0.773 & 0.237 \\
- & & DiffPIR & 26.14 & 0.740 & \textbf{0.170} \\
+ & \multirow{4}{*}{0.01} & Observation (bicubic) & 23.58\pmstd{1.83} & 0.676 & 0.531 \\
+ & & SMDC + IHDM ($\gamma{=}0.5$) & \textbf{27.35}\pmstd{2.40} & \textbf{0.776} & 0.343 \\
+ & & DDRM & 26.77\pmstd{2.27} & 0.764 & 0.230 \\
+ & & DiffPIR & 26.21\pmstd{2.15} & 0.727 & \textbf{0.159} \\
 \cmidrule{2-6}
- & \multirow{4}{*}{0.05} & Observation (bicubic) & 22.87 & 0.611 & 0.675 \\
- & & SMDC + IHDM ($\gamma{=}0$) & 25.40 & 0.739 & 0.401 \\
- & & DDRM & \textbf{25.50} & \textbf{0.744} & 0.255 \\
- & & DiffPIR & 24.61 & 0.698 & \textbf{0.192} \\
+ & \multirow{4}{*}{0.05} & Observation (bicubic) & 23.14\pmstd{1.66} & 0.605 & 0.657 \\
+ & & SMDC + IHDM ($\gamma{=}0$) & 25.44\pmstd{2.21} & 0.724 & 0.400 \\
+ & & DDRM & \textbf{25.64}\pmstd{2.04} & \textbf{0.732} & 0.250 \\
+ & & DiffPIR & 24.69\pmstd{1.91} & 0.681 & \textbf{0.189} \\
 \midrule
 \multirow{10}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
- & \multirow{5}{*}{0.01} & Observation (bicubic) & 27.16 & 0.798 & 0.356 \\
- & & SMDC + IHDM ($\gamma{=}0$) & \textbf{28.60} & \textbf{0.834} & 0.252 \\
- & & DDRM (\texttt{sr4}) & 27.84 & 0.811 & 0.186 \\
- & & DDNM & 28.38 & 0.828 & 0.167 \\
- & & DiffPIR & 27.43 & 0.789 & \textbf{0.111} \\
+ & \multirow{5}{*}{0.01} & Observation (bicubic) & 27.34\pmstd{2.33} & 0.793 & 0.353 \\
+ & & SMDC + IHDM ($\gamma{=}0$) & \textbf{28.78}\pmstd{2.72} & \textbf{0.829} & 0.250 \\
+ & & DDRM (\texttt{sr4}) & 27.98\pmstd{2.47} & 0.804 & 0.183 \\
+ & & DDNM & 28.57\pmstd{2.66} & 0.823 & 0.163 \\
+ & & DiffPIR & 27.64\pmstd{2.43} & 0.785 & \textbf{0.109} \\
 \cmidrule{2-6}
- & \multirow{5}{*}{0.05} & Observation (bicubic) & 26.17 & 0.721 & 0.504 \\
- & & SMDC + IHDM ($\gamma{=}4$) & \textbf{27.80} & 0.806 & 0.316 \\
- & & DDRM (\texttt{sr4}) & 27.31 & 0.795 & 0.204 \\
- & & DDNM & 27.78 & \textbf{0.809} & 0.190 \\
- & & DiffPIR & 26.81 & 0.760 & \textbf{0.148} \\
+ & \multirow{5}{*}{0.05} & Observation (bicubic) & 26.34\pmstd{1.89} & 0.714 & 0.501 \\
+ & & SMDC + IHDM ($\gamma{=}4$) & 27.92\pmstd{2.35} & 0.798 & 0.312 \\
+ & & DDRM (\texttt{sr4}) & 27.51\pmstd{2.31} & 0.788 & 0.202 \\
+ & & DDNM & \textbf{27.95}\pmstd{2.41} & \textbf{0.801} & 0.187 \\
+ & & DiffPIR & 26.93\pmstd{2.16} & 0.752 & \textbf{0.141} \\
 \bottomrule
 \end{tabular}
 \end{table}

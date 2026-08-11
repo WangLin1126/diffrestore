@@ -11,17 +11,28 @@ Goal: turn the current technical report (`docs/hqs_report.tex`) into a submittab
 section for CVPR / NeurIPS / ICLR. Every claim in the title — **scale-matched DC**, **non-hot
 prior**, **freq-aware reg** — must be defended by a measured experiment.
 
-**Where we stand (gaps that block submission):** `n=16` test images (too small — reject risk);
+**Where we stand (gaps that block submission):** larger eval set **in progress** (A1-1, `n=200`);
 one dataset (CelebA-HQ-256 faces only); the title claim (scale-matched DC) has **no ablation**.
-Baselines are now DPS · DDRM · **DiffPIR** (all deblur + SR) · **DDNM** (box-SR) at `n=16` — the
-modern-baseline table (A1-3) is done; it still needs to be re-run at 1k and on ImageNet (A1-1/2).
+Baselines are DPS · DDRM · **DiffPIR** (all deblur + SR) · **DDNM** (box-SR) — validated at `n=16`,
+being re-run at `n=200` (A1-1); still to run on ImageNet (A1-2).
 
 ## A1 — Must-have (desk-reject risk without these)
 
-1. **1k test set + mean±std.** *[dependency for everything else — do FIRST]* Re-run all existing
-   tables on a 1k held-out CelebA-HQ split; use the **DDRM/DPS published 1k indices** so the DDRM
-   row is checkable against their papers (free credibility). Report mean±std. If any number moves
-   materially from `n=16`, every downstream comparison must adopt the new value — hence first.
+1. ✅ **DONE — Larger test set (n=200) + mean±std.** *[dependency for everything else — do FIRST]* **Scope
+   change (2026-08-09): use `n=200`, not 1k** (1k too heavy on 2–4 shared GPUs), **our own indices =
+   first 200 of the korexyz CelebA-HQ-256 validation split** (superset of the current 16 → each
+   method's first-16 must reproduce the published cell, a built-in guard). Re-run all main tables on
+   this set, report mean±std. **DONE (2026-08-11):** all methods run + validated to the published
+   first-16 (built-in guard), scored at n=200 (DPS n=100), and the **4 main tables in `hqs_report.tex`
+   (gauss/motion/defocus/sr) rewritten to n=200 with PSNR mean±std** (compiles, 14pp). Numbers in
+   `results200/scores_n200.md`. Bugs fixed en route: motion-CG `--freq_reg`, SR `--abs_noise`, TV
+   recipe (per-noise β / reflect-CG / disk), DDRM-gaussian operator (`deblur_gauss`→`deblur_aa`; proved
+   our σ=4 ≡ spatial std-4 Gaussian exactly). Honest shifts at high noise: operator-matched DDRM edges
+   IHDM on gaussian-0.20 & SR; DiffPIR wins LPIPS everywhere; IHDM leads distortion on motion/defocus.
+   Prose (defocus/SR narratives + abstract) synced to n=200. Benchmark now driven by the declarative
+   `experiments/` package (registry→run→score, guard auto-runs); pitfalls in `docs/PITFALLS.md`.
+   **Deferred (not blocking A1-1):** reg-ablation tables `tab:regablation`/`regablation2` still n=16
+   (IHDM-only γ sweeps — re-run at n=200 when needed); figures still show old runs.
 2. **Second dataset — ImageNet-256.** Port method + all baselines. This is where the *non-hot
    prior* claim is actually on trial (faces are low-entropy; natural images are the honest test).
    Largest compute block — freeze the eval pipeline and baseline harness before starting, or redo.
