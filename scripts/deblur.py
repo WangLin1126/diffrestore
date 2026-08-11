@@ -148,13 +148,17 @@ def cmd_restore(args):
         wy0 = args.data_weight / args.sigma_y ** 2
         N = sch.num_levels - 1
         reg = P.make_freq_reg((1.0 - an).clamp_min(0.0), args.freq_reg, wp)   # freq-aware CG reg (gamma)
+        # A2-4 ablation: scale-matched target L_t y = K_t y  vs  naive raw y at every step
+        # (`y` is the loop-local observation, bound below; both lambdas late-bind it at call time)
+        tgt = (lambda tn, mu: y) if args.naive_dc else (lambda tn, mu: sch.apply_K(y, tn))
         print(f"  MOTION-CG prior={args.prior} res={H} K={N} cg_iters={args.cg_iters} "
-              f"freq_reg={args.freq_reg} (spatial reflect A, exact adjoint, no FFT)", flush=True)
+              f"freq_reg={args.freq_reg} naive_dc={args.naive_dc} "
+              f"(spatial reflect A, exact adjoint, no FFT)", flush=True)
         S = P.new_scores("in", "out", "ssim", "lpips", "mc")
         for k in range(x0.shape[0]):
             xi, y = x0[k:k + 1], ys[k:k + 1]
             with torch.no_grad():
-                x = P.smdc_cg(A, prior, lambda tn, mu: sch.apply_K(y, tn), times, wp, wy0, N,
+                x = P.smdc_cg(A, prior, tgt, times, wp, wy0, N,
                               x_init=sch.apply_K(y, times[0]).clamp(-1, 1), reg=reg, cg_iters=args.cg_iters)
             P.save_img(os.path.join(args.out, "recon", f"{k:05d}.png"), x)
             P.add_scores(S, x, xi, dev, y=y, A=A)
@@ -167,14 +171,15 @@ def cmd_restore(args):
     corr = MAPCorrection(sch, A._dct_transfer, delta=args.delta, sigma_y=args.sigma_y,
                          prior_weight=args.prior_weight, data_weight=args.data_weight,
                          schedule_kind=args.map_schedule, freq_reg=args.freq_reg)
-    print(f"  {args.operator.upper()}-HQS(closed form) prior={args.prior} res={H} freq_reg={args.freq_reg}",
-          flush=True)
+    print(f"  {args.operator.upper()}-HQS(closed form) prior={args.prior} res={H} "
+          f"freq_reg={args.freq_reg} naive_dc={args.naive_dc}", flush=True)
     S = P.new_scores("in", "out", "ssim", "lpips", "mc")
     for k in range(x0.shape[0]):
         xi, y = x0[k:k + 1], ys[k:k + 1]
         x_init = terminal_init("matched_measurement", y, sch, times[0])
         x = scale_matched_solver(y, x_init, times, A, sch, prior, corr, clamp=(-1, 1),
                                  logger=RunLogger(verbose=False), x0_ref=xi,
+                                 scale_match=not args.naive_dc,
                                  noise_scale=args.noise_scale, noise_kind=args.noise_kind)
         P.save_img(os.path.join(args.out, "recon", f"{k:05d}.png"), x)
         P.add_scores(S, x, xi, dev, y=y, A=A)
@@ -303,6 +308,9 @@ def main():
     pr.add_argument("--map_schedule", choices=["late", "const"], default="late")   # closed-form
     pr.add_argument("--freq_reg", type=float, default=0.5,
                     help="frequency-aware prior-precision boost gamma (0 = plain MAP; 0.5 default)")
+    pr.add_argument("--naive_dc", action="store_true",
+                    help="A2-4 ablation: enforce data consistency against the raw sharp y at every "
+                         "step (drop the scale-matching companion L_t). scale_match=False.")
     pr.add_argument("--noise_scale", type=float, default=0.0)
     pr.add_argument("--noise_kind", choices=["anneal", "sigma", "const"], default="anneal")
     pr.set_defaults(func=cmd_restore)

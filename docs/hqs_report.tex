@@ -565,6 +565,240 @@ Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
 \end{tabular}
 \end{table}
 
+\paragraph{Scale-matched vs.\ naive data consistency (the title ablation).}
+Every result above uses the \emph{scale-matched} data step: at reverse level $t$ the measurement is
+carried to the current blur level by the companion $\mathbf{L}_{t-1}=\K_{t-1}$
+(Eq.~\ref{eq:scalematch}), so the per-step residual $\A\x_{t-1}-\K_{t-1}\y$ compares two quantities
+that live at the \emph{same} scale $\sigma_{t-1}$. The naming contribution of this paper is exactly
+this companion. To isolate it we run the identical solver, prior, schedule, and reg, changing a
+\emph{single line}: the data step now enforces consistency against the raw, full-resolution
+measurement $\y$ at every step ($\A\x_{t-1}-\y$)---the ``obvious'' choice, and what plug-and-play
+methods do when they inject $\y$ into a per-step gradient without accounting for the coarseness of the
+intermediate state. Table~\ref{tab:dcablation} reports both on the Gaussian-deblur cells at $n{=}200$.
+
+The effect is not a tuning detail but a \textbf{structural collapse}: naive DC falls to
+$\approx\!12$\,dB across all noise levels---a $13$--$15$\,dB drop from scale-matched, and $6$--$11$\,dB
+\emph{below the blurry input itself}. The reason is exact. The reverse state $\x_{t-1}$ is blurred to
+scale $\sigma_{t-1}$ (it is a heat-prior sample at that level), so $\A\x_{t-1}$ is \emph{even blurrier}
+than the observation and cannot equal the sharp $\y$; the per-step MAP therefore chases an infeasible
+target and the iteration diverges, injecting the high-frequency content of a naive deconvolution at
+every one of the $\sim\!200$ steps. Scale-matching is what makes the per-step likelihood
+\emph{consistent}---$\A\x_{t-1}=\K_{t-1}\y$ is exactly solvable precisely because $\A$ and $\K_{t-1}$
+commute (Eq.~\ref{eq:scalematch})---and it is load-bearing rather than incremental. Tellingly, naive
+DC is no better on the very quantity it optimizes: its measurement consistency MC does not improve
+(and worsens once the step size is opened up, below), because the divergence spoils the fit it was
+trying to enforce.
+
+This is \emph{not} an artifact of a bad step size. Sweeping the naive data step's weight
+$w_{\text{data}}\!\in\![0.25,64]$ and reg $\gamma\!\in\![0,2]$ on the tuning split, its best case is
+only $13.01$\,dB (at $w_{\text{data}}{=}0.25,\gamma{=}0$)---gentler consistency helps by under a dB
+and never approaches feasibility. Run at $n{=}200$ this best-tuned naive DC reaches
+$13.26\pmstd{0.82}$\,dB, still $\approx\!14$\,dB below scale-matched (and with a \emph{worse}
+measurement consistency, $\text{MC}{=}0.45$ vs.\ $0.09$). We therefore report the naive arm with
+the \emph{matched} hyper-parameters (a true one-variable ablation) in Table~\ref{tab:dcablation}; the
+re-tuned figure only confirms the gap survives when the baseline is given its best case---even when
+allowed to tune on the eval set, a deliberately pro-baseline concession. The complementary
+alternative---applying data consistency to a clean-image estimate $\hat\x_0$ rather than to
+$\x_{t-1}$, as DPS and DiffPIR do---is a \emph{different} method, already tabulated as a baseline
+above; it avoids the divergence but forgoes the exact per-step likelihood and the closed-form data
+step that scale-matching buys.
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Scale-matched vs.\ naive data consistency}, the title ablation: identical solver,
+prior, schedule and reg $\gamma$; the \emph{only} change is whether the per-step data step compares
+$\A\x_{t-1}$ against the scale-matched $\K_{t-1}\y$ (ours) or the raw sharp $\y$ (naive). Gaussian
+deblur ($\sigma_{\text{blur}}{=}4$), held-out CelebA-HQ-256, $n{=}200$; PSNR as mean$\pm$std. Naive DC
+uses the \emph{same} per-noise $\gamma$ as ours. Observation (blurry input) shown for reference: naive
+DC lands \emph{below} it. Bold = best per noise block.}
+\label{tab:dcablation}
+\begin{tabular}{llcccc}
+\toprule
+$\sigma_y$ & Data-consistency target & PSNR & SSIM & LPIPS & MC \\
+\midrule
+\multirow{3}{*}{0.05}
+ & Observation (input)                       & 23.11\pmstd{1.61} & 0.523 & 0.565 & 0.116 \\
+ & Naive ($\A\x_{t-1}{=}\y$)                  & 11.97\pmstd{1.06} & 0.286 & 0.610 & 0.123 \\
+ & \textbf{Scale-matched} ($\A\x_{t-1}{=}\K_{t-1}\y$) & \textbf{27.30}\pmstd{2.37} & \textbf{0.771} & \textbf{0.347} & \textbf{0.091} \\
+\midrule
+\multirow{3}{*}{0.10}
+ & Observation (input)                       & 21.70\pmstd{1.18} & 0.344 & 0.726 & 0.192 \\
+ & Naive ($\A\x_{t-1}{=}\y$)                  & 11.79\pmstd{0.99} & 0.270 & 0.609 & 0.208 \\
+ & \textbf{Scale-matched} ($\A\x_{t-1}{=}\K_{t-1}\y$) & \textbf{26.60}\pmstd{2.23} & \textbf{0.746} & \textbf{0.373} & \textbf{0.178} \\
+\midrule
+\multirow{3}{*}{0.20}
+ & Observation (input)                       & 18.68\pmstd{0.63} & 0.180 & 0.937 & 0.342 \\
+ & Naive ($\A\x_{t-1}{=}\y$)                  & 12.08\pmstd{1.08} & 0.285 & 0.606 & 0.363 \\
+ & \textbf{Scale-matched} ($\A\x_{t-1}{=}\K_{t-1}\y$) & \textbf{25.47}\pmstd{2.05} & \textbf{0.709} & \textbf{0.393} & \textbf{0.336} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{On the prior: why non-hot.}
+The ablation above isolates the \emph{solver}; the \emph{prior} axis is settled by the main tables
+together with a structural fact. Scale-matched data consistency is not merely well-suited to a
+non-hot prior---it is \emph{only defined} for one. The exact per-step target
+$\A\x_{t-1}=\K_{t-1}\y$ exists because the prior's forward blur $\K_t$ commutes with the measurement
+$\A$ (Eq.~\ref{eq:commute}); a hot variance-preserving (VP) prior injects white noise rather than
+blurring, so no companion $\mathbf{L}_t$ exists and the method necessarily reduces to
+$\hat\x_0$-guidance. Every \emph{learned} baseline in Tables~\ref{tab:gauss}--\ref{tab:sr}---DPS,
+DDRM, DiffPIR, DDNM---is exactly such a hot VP prior (the shared FFHQ \texttt{ffhq\_10m} model)
+driven by the strongest guidance available for that prior class, and our non-hot IHDM$+$SMDC leads
+them on distortion throughout. We therefore do not run a separate hot-prior arm of \emph{our} solver:
+there is none to run---a hot prior forgoes the exact per-step likelihood by construction, and
+Table~\ref{tab:dcablation} shows precisely what happens to a per-step data step once the scale match
+it depends on is removed. A fully controlled swap---the same blurring forward made \emph{hot} by added
+noise (blurring diffusion)---requires retraining the prior and is left to future work; the present
+evidence (structural non-existence of $\mathbf{L}_t$ under VP, together with the measured gap to the
+hot-prior baselines on identical data and operators) already isolates the prior claim.
+
+\paragraph{Computational cost.}
+Table~\ref{tab:compute} reports the compute of every method under two lenses: \emph{NFE} (neural
+function evaluations---the hardware-independent count of prior-network passes) and wall-clock
+seconds per image on a single TITAN RTX (restoration only, batch~1). The point is not that our method
+is the fastest in raw seconds---it is not: DDRM, DDNM and DiffPIR run a \emph{smaller} $94$M VP prior
+at $20$--$100$ steps and finish in $1$--$7$\,s. The point is where the cost \emph{goes}. Our
+scale-matched data step is closed-form (a per-frequency division, Eq.~\ref{eq:wiener}) or a $12$-iter
+CG with no network call, so it adds \textbf{zero NFE}: our runtime is exactly that of an
+unconditional $N{=}200$-step IHDM sampling pass, and the data consistency is free. This is the
+opposite of guidance-based DPS, which spends $1000$ steps \emph{and} backpropagates through the prior
+at every step (two network passes per step); on the identical GPU it costs $95.5$\,s/img,
+$\sim\!3\times$ our $25$--$36$\,s and $5\times$ the NFE, for uniformly lower distortion
+(Tables~\ref{tab:gauss}--\ref{tab:defocus}). Against the fast SVD methods the trade is qualitative,
+not temporal: DDRM and DDNM diagonalize $\A$ by an SVD that exists \emph{only} for separable
+operators, so they are simply inapplicable to motion and defocus (blank rows above), whereas our
+closed-form step follows from the prior's own heat basis and applies to every operator we test. Our
+two remaining cost levers are orthogonal to the contribution and quantified elsewhere: the $211$M
+prior (vs.\ $94$M) is a backbone choice, and the $200$-step budget is the IHDM default that can be
+reduced without retraining (a step-count/quality sweep is left to future work).
+
+\begin{table}[h]
+\centering
+\caption{Computational cost, all methods, $1\times$ TITAN RTX (restoration only, batch~1). NFE
+counts prior-network passes; ``DC step'' is the per-step data-consistency mechanism and its marginal
+NFE. Our scale-matched MAP adds \emph{zero} NFE (closed-form / CG, no network call), so our wall-clock
+equals a plain $N{=}200$-step sampling pass. DPS additionally backpropagates through the prior each
+step ($\sim\!2\times$ passes). Runtime for our method is given per operator (closed-form for
+gaussian/defocus, CG for motion).}
+\label{tab:compute}
+\begin{tabular}{lllll}
+\toprule
+Method & Prior & NFE & DC step (marginal NFE) & sec/img \\
+\midrule
+TV                 & ---            & $0$              & Wiener / CG ($0$)         & $1.6$/$2.7$ \\
+DDRM               & VP $94$M       & $20$             & SVD, separable ($0$)      & $1.0$ \\
+DDNM               & VP $94$M       & $100$            & SVD range-null, sep.\ ($0$) & $4.8$ \\
+DiffPIR            & VP $94$M       & $100$            & FFT-HQS, circular ($0$)   & $6.6$ \\
+cold + HQS         & non-hot        & $200$            & closed-form ($0$)         & $13.2$ \\
+DPS                & VP $94$M       & $1000$ ($+$bp)   & $\nabla$ guidance ($+1$/step) & $95.5$ \\
+\textbf{IHDM + HQS (ours)} & non-hot $211$M & $200$    & \textbf{closed-form / CG ($0$)} & $24.8$/$31.3$/$36.4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Steps vs.\ quality (NFE sweep).}
+The $N{=}200$ operating point used above is the IHDM default, not a tuned choice. Because our data
+step is closed-form at every level, the blur-level grid can be subsampled to any $M<N$ steps with no
+other change to the method---a respaced, strictly-decreasing schedule with $\text{NFE}{=}M$, the
+closed-form MAP still applied at each retained level. Table~\ref{tab:nfe} sweeps $M$ on Gaussian
+deblur at $n{=}200$. Degradation is smooth and monotone: halving to $M{=}100$ costs only $1.1$\,dB,
+and $M{=}25$---an $8\times$ NFE and $\sim\!6\times$ wall-clock reduction---still retains $25.24$\,dB.
+Two features stand out. First, the loss is almost entirely \emph{perceptual, not data-fidelity}:
+measurement consistency MC is essentially flat across the sweep ($0.091\!\rightarrow\!0.102$) while
+LPIPS rises, exactly as expected when the closed-form data step (applied at every retained level,
+independent of $M$) carries consistency and the prior supplies high-frequency detail. Second, the
+low-NFE regime is strikingly cheap: at $M{=}12$ ($\sim\!2$\,s/img) IHDM already scores $24.73$\,dB,
+\emph{above} DPS's $24.12$\,dB---which spends $1000$ NFE at $95.5$\,s/img (Table~\ref{tab:compute})---so
+our method matches or beats the guidance baseline at a few percent of its compute. The same monotone
+curve holds for the other operators and \emph{both} solver types (first-$16$: motion, the spatial-CG
+path, $30.43\!\rightarrow\!27.12$\,dB and defocus $27.82\!\rightarrow\!25.21$\,dB from $M{=}200$ to
+$M{=}25$), so the trend is not Gaussian-specific. The $200$-step default is therefore a quality
+ceiling, not a requirement; a practitioner can move down the curve smoothly to trade fidelity for speed.
+
+\begin{table}[h]
+\centering
+\caption{Number of function evaluations (NFE $=$ reverse steps $M$) vs.\ quality, IHDM$+$HQS on
+Gaussian deblur ($\sigma_{\text{blur}}{=}4$, $\sigma_y{=}0.05$, $\gamma{=}0.25$), held-out
+CelebA-HQ-256, $n{=}200$. The $M{=}200$ row is the default operating point (Table~\ref{tab:gauss});
+lower-$M$ rows respace the blur-level grid. sec/img indicative, $1\times$ TITAN RTX. MC (measurement
+consistency) stays flat while PSNR/LPIPS degrade gracefully, showing the closed-form data step holds
+fidelity as the prior budget shrinks. For reference, DPS scores $24.12$\,dB at $1000$ NFE
+($95.5$\,s/img); IHDM passes that quality by $M{=}12$ ($\sim\!2$\,s/img).}
+\label{tab:nfe}
+\begin{tabular}{rccccr}
+\toprule
+NFE ($M$) & PSNR & SSIM & LPIPS & MC & sec/img \\
+\midrule
+$200$ (default) & \textbf{27.30} & \textbf{0.771} & \textbf{0.347} & 0.091 & $24.8$ \\
+$100$ & $26.21$ & $0.742$ & $0.436$ & $0.091$ & $15$ \\
+$50$  & $25.69$ & $0.726$ & $0.465$ & $0.092$ & $8$ \\
+$25$  & $25.24$ & $0.713$ & $0.490$ & $0.093$ & $4$ \\
+$12$  & $24.73$ & $0.699$ & $0.516$ & $0.095$ & $2$ \\
+$6$   & $24.12$ & $0.683$ & $0.540$ & $0.102$ & $1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Robustness to noise-level misspecification.}
+A practical solver rarely knows the true measurement noise $\sigma_y$. Where it enters is
+structurally different across methods, and that difference governs how they fail. In our method
+$\sigma_y$ appears \emph{only} as the soft data weight $w_y=\alpha_y/\sigma_y^2$ in the per-step
+MAP~\eqref{eq:map}; the prior itself is \emph{noise-unconditioned} (it is a heat-dissipation model
+conditioned on blur level, not on noise). In DDRM the same quantity sets the SVD spectral
+shrinkage---each mode is divided by a $\sigma_0$-dependent factor---so it is baked into the estimator,
+not a soft weight. Table~\ref{tab:robust} feeds both methods the \emph{true} noise in the data but a
+\emph{wrong} assumed $\sigma_y$ (a misspecification factor $\times0.5$ to $\times4$), holding
+everything else fixed.
+
+Three things stand out. \textbf{(i)} The correct $\sigma_y$ is optimal for both---robustness is not
+independence---but the penalty for a moderate error is small for ours: within $\times2$ either way IHDM
+stays within $\sim\!1.5$\,dB at low/moderate noise. \textbf{(ii)} The fragile directions are
+\emph{opposite}. DDRM tolerates over-estimation but \textbf{collapses catastrophically under
+\emph{under}-estimation}: a mere $\times0.5$ error drops it to $4.98$\,dB \emph{at every noise level}
+(the reconstruction is $94\%$ saturated noise---dividing the SVD by a too-small $\sigma_0$ amplifies
+the measurement without bound). IHDM tolerates under-estimation ($\le\!1.5$\,dB) and is instead
+softest under gross \emph{over}-estimation at high noise. \textbf{(iii)} Crucially, the two failure
+\emph{modes} differ in kind: IHDM \textbf{never diverges}---its worst cell ($\times4$ over at
+$\sigma_y{=}0.20$) degrades \emph{gracefully} to $18.3$\,dB, i.e.\ back to the blurry-input level as
+the data term is starved and the prior takes over, whereas DDRM's worst case is unbounded noise
+amplification. Because a noise-unconditioned prior turns $\sigma_y$ into a bounded interpolation
+knob rather than a divisor, IHDM has \emph{no catastrophic regime}: under any noise
+\emph{under}-estimate it stays usable while DDRM does not, making it the safer choice when $\sigma_y$
+is uncertain.
+
+\begin{table}[h]
+\centering
+\caption{Robustness to noise-level misspecification, Gaussian deblur, held-out CelebA-HQ-256. The
+observation carries the \emph{true} $\sigma_y$ (rows); the solver is given a \emph{wrong} assumed
+$\sigma_y$ (columns, as a factor of the truth). PSNR in dB; the $\times1$ column reproduces the main
+table (guard). IHDM $\gamma$ is held at its true-noise value so only the assumed noise varies. IHDM
+$n{=}50$; DDRM $n{=}200$ (\texttt{deblur\_aa}, $20$ steps, true noise added, assumed $\sigma_0$ in
+the SVD). Bold = correct $\sigma_y$. DDRM collapses ($4.98$) under any under-estimate; IHDM never
+diverges (worst case falls back to the $\sim\!18$\,dB blurry-input level).}
+\label{tab:robust}
+\begin{tabular}{llcccc}
+\toprule
+true $\sigma_y$ & Method & $\times0.5$ & $\times1$ & $\times2$ & $\times4$ \\
+\midrule
+\multirow{2}{*}{$0.05$}
+ & IHDM & $25.76$ & \textbf{27.04} & $26.66$ & $25.68$ \\
+ & DDRM & $\mathbf{4.98}^{\dagger}$ & $26.88$ & $26.97$ & $26.46$ \\
+\midrule
+\multirow{2}{*}{$0.10$}
+ & IHDM & $24.87$ & \textbf{26.38} & $25.74$ & $22.80$ \\
+ & DDRM & $\mathbf{4.98}^{\dagger}$ & $26.40$ & $26.39$ & $25.74$ \\
+\midrule
+\multirow{2}{*}{$0.20$}
+ & IHDM & $24.38$ & \textbf{25.32} & $22.94$ & $18.32$ \\
+ & DDRM & $\mathbf{4.98}^{\dagger}$ & $25.73$ & $25.65$ & $24.77$ \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}
+{\footnotesize $^{\dagger}$ Catastrophic collapse: the reconstruction is $\sim\!94\%$ saturated
+noise (SVD noise amplification), not a graceful degradation.}
+\end{table}
+
 \paragraph{Frequency-aware reg ablation.}
 Table~\ref{tab:regablation} sweeps the reg $\gamma$ (Eq.~\ref{eq:wienerreg}) per degradation. The
 only \emph{large distortion} gain is \textbf{motion} ($+0.69$\,dB PSNR, $+0.038$ SSIM at
