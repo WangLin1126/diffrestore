@@ -407,7 +407,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{../results/gaussian/figure_gaussian.png}
+\includegraphics[width=\linewidth]{figures/figure_gaussian.png}
 \caption{Gaussian deblur, held-out CelebA-HQ-256 (per-column mean PSNR/SSIM/LPIPS in the
 headers). With $\A$ and the heat prior sharing the DCT basis, the non-hot HQS priors (cold,
 IHDM) win distortion; the diffusion baselines (DPS, DiffPIR) win perceptual LPIPS.}
@@ -416,7 +416,7 @@ IHDM) win distortion; the diffusion baselines (DPS, DiffPIR) win perceptual LPIP
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{../results/motion_reflect/figure_motion.png}
+\includegraphics[width=\linewidth]{figures/figure_motion.png}
 \caption{Motion deblur (Levin09~\#1) at $\sigma_y=0.05$ on realistic \textbf{reflect-boundary}
 observations, full frame: TV, cold$+$CG, IHDM$+$CG and DPS. TV, cold$+$CG and IHDM$+$CG share the
 spatial-CG data step and reconstruct the full frame cleanly---no iFFT, no wrap---whereas DPS, whose
@@ -896,6 +896,85 @@ Operator & $\sigma_y$ & $\gamma{=}0$ & $0.25$ & $0.5$ & $1$ & $2$ & $\gamma^\ast
 \multirow{3}{*}{Motion}   & 0.05 & 29.74 & 30.30 & \textbf{30.43} & 30.35 & 29.96 & 0.5 \\
                           & 0.10 & \textbf{28.41} & 28.38 & 28.32 & 28.19 & 27.96 & 0 \\
                           & 0.20 & \textbf{26.79} & 26.74 & 26.70 & 26.60 & 26.42 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Beyond ill-conditioned operators: inpainting.}
+Every operator above is full-support and \emph{ill-conditioned} (blur, downsample), the regime where
+scale-matching is essential. Inpainting---a $0/1$ pixel mask $\mathbf M$---is the opposite: an
+orthogonal projection (singular values exactly $0/1$), well-conditioned but rank-deficient, and it
+lies formally \emph{outside} our intertwining. A mask does not commute with the heat blur
+($\mathbf M\K_t\neq\K_t\mathbf M$), so no exact companion $\mathbf L_t$ exists---the blurred-then-masked
+measurement depends on the unobserved pixels. We approximate the missing companion by a \emph{re-blur}
+step: at level $t$ we composite the observed data with the current hole estimate, blur the composite to
+level $t$, and pin the observed region to it, so the injected data lives at the state's own scale
+rather than as sharp values in a blurry field. A few RePaint-style resampling passes per level
+($U{=}5$) then let the observed data propagate into the holes.
+
+The outcome (Table~\ref{tab:inpaint}) is sharply regime-dependent. On \emph{random} masks the method is
+strong and robust across densities: at $50\%$ missing it reaches $29.9$\,dB hole-PSNR / LPIPS $0.030$
+with \emph{zero} failures over $50$ images, and still recovers $28.7$\,dB at $70\%$ missing. On an
+identical fixed $50\%$ mask it \emph{beats} DDRM on every metric (hole-PSNR $29.97$ vs.\ $27.70$, SSIM
+$0.941$ vs.\ $0.871$, LPIPS $0.029$ vs.\ $0.084$). The limitation is equally clear and instructive: a
+large \emph{contiguous} hole (a centered $37.5\%$ box) fails ($10.7$\,dB), because no observed pixel
+lies near the hole interior for the re-blur to reach, and a heat-dissipation prior \emph{deblurs}
+rather than \emph{synthesizes}. Inpainting thus succeeds precisely where the mask is scattered enough
+for diffusion to bridge the gaps; wide-baseline hole-filling needs a generative (VP/blurring-diffusion)
+prior and is left to future work. The price is the resampling: $U{=}5\times$ the NFE ($\sim\!1000$).
+
+\begin{table}[h]
+\centering
+\caption{Inpainting, held-out CelebA-HQ-256. IHDM$+$re-blur companion with $U{=}5$ resampling passes
+per level. \emph{full} = whole-image PSNR (observed pixels pinned), \emph{hole} = missing-region-only
+PSNR. Top: per-image random masks and a contiguous box, $n{=}50$ (PSNR mean$\pm$std). Bottom:
+head-to-head on one \emph{shared} fixed $50\%$ mask, $n{=}16$, vs.\ DDRM (\texttt{deg=inp}, $20$ steps).
+Random masks recover cleanly (zero failures); the contiguous box is the failure case.}
+\label{tab:inpaint}
+\begin{tabular}{llcccc}
+\toprule
+Mask & Method & full & hole & SSIM & LPIPS \\
+\midrule
+random, keep $70\%$ & IHDM & $35.86$\pmstd{4.00} & $30.63$\pmstd{4.01} & $0.968$ & $0.013$ \\
+random, keep $50\%$ & IHDM & $32.87$\pmstd{3.83} & $29.86$\pmstd{3.83} & $0.940$ & $0.030$ \\
+random, keep $30\%$ & IHDM & $30.20$\pmstd{3.62} & $28.65$\pmstd{3.62} & $0.898$ & $0.072$ \\
+box $37.5\%$ (contig.) & IHDM & $19.25$\pmstd{2.77} & $10.73$\pmstd{2.77} & $0.897$ & $0.118$ \\
+\midrule
+\multirow{2}{*}{fixed $50\%$}
+ & \textbf{IHDM} & \textbf{32.96} & \textbf{29.97} & \textbf{0.941} & \textbf{0.029} \\
+ & DDRM & $29.72$ & $27.70$ & $0.871$ & $0.084$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Noisy inpainting.}
+We add measurement noise to the observed pixels (fixed random $70\%$-keep mask, $n{=}16$;
+Table~\ref{tab:inpaintnoise}). At low noise ($\sigma_y{=}0.01$) IHDM leads on \emph{every} metric. At
+$\sigma_y{=}0.05$ the comparison splits along a principled line: IHDM still wins on the \emph{hole}
+itself---the actual completion ($29.70$ vs.\ $29.19$\,dB)---but its \emph{hard} data step pins the
+observed pixels to the noisy measurement (MC$\,\approx\,0$), so the observed region retains that
+noise and DDRM's soft SVD denoising takes the full-image PSNR and SSIM. A soft (denoising)
+observed-pixel update would recover the observed region and is a natural extension; the numbers here
+are honest hard-consistency inpainting.
+
+\begin{table}[h]
+\centering
+\caption{Noisy inpainting, fixed random $70\%$-keep mask, held-out CelebA-HQ-256, $n{=}16$.
+\emph{full} = whole-image PSNR, \emph{hole} = missing-region-only PSNR. IHDM uses the re-blur
+companion ($U{=}5$) with a \emph{hard} observed-pixel constraint; DDRM (\texttt{deg=inp}, $20$ steps)
+denoises the observation via its SVD with $\sigma_0{=}\sigma_y/2$. Bold = best per $\sigma_y$ block.}
+\label{tab:inpaintnoise}
+\begin{tabular}{llcccc}
+\toprule
+$\sigma_y$ & Method & full & hole & SSIM & LPIPS \\
+\midrule
+\multirow{2}{*}{$0.01$}
+ & \textbf{IHDM} & \textbf{35.49} & \textbf{30.68} & \textbf{0.961} & \textbf{0.013} \\
+ & DDRM & $34.33$ & $29.24$ & $0.951$ & $0.021$ \\
+\midrule
+\multirow{2}{*}{$0.05$}
+ & IHDM & $30.97$ & \textbf{29.70} & $0.819$ & $0.074$ \\
+ & DDRM & \textbf{31.73} & $29.19$ & \textbf{0.897} & \textbf{0.070} \\
 \bottomrule
 \end{tabular}
 \end{table}

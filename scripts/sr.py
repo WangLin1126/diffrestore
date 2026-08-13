@@ -44,6 +44,9 @@ def cmd_demo(args):
 
     sig_w = max(args.sigma_y, 0.01)                 # data-weight sigma (floored so sigma_y=0 -> noiseless obs, same wy)
     wp, wy0 = 1.0 / args.delta ** 2, args.data_weight / sig_w ** 2
+    # frequency-aware prior-precision boost gamma*wp*(1-a_n(f)): suppresses transition-band speckle in
+    # A's null space (see docs/hqs_report.tex Table tab:sr; best gamma is per-cell, 0.5 at sigma_y=0.01)
+    reg = P.make_freq_reg((1.0 - A_raw.transfer_profile()).clamp_min(0.0), args.freq_reg, wp)
     times = list(range(N, -1, -1))
     for s in ("recon", "clean", "observation"):
         os.makedirs(os.path.join(args.out, s), exist_ok=True)
@@ -67,7 +70,7 @@ def cmd_demo(args):
                 return sr_scale_matched_target(A, sch, lr_sch, tn, y,
                                                x_hr=mu if args.exact_intertwine else None)
             x = P.smdc_cg(A, prior, target, times, wp, wy0, N,
-                          x_init=sch.apply_K(bic, times[0]).clamp(-1, 1), cg_iters=args.cg_iters)
+                          x_init=sch.apply_K(bic, times[0]).clamp(-1, 1), reg=reg, cg_iters=args.cg_iters)
         P.save_img(os.path.join(args.out, "recon", f"{idx:05d}.png"), x)
         P.save_img(os.path.join(args.out, "clean", f"{idx:05d}.png"), x0)
         P.save_img(os.path.join(args.out, "observation", f"{idx:05d}.png"), y * lam)
@@ -288,6 +291,9 @@ def main():
     pd.add_argument("--exact_intertwine", action="store_true",
                     help="add the QMF alias correction to the data target (plug-in: current prior mean)")
     pd.add_argument("--sigma_y", type=float, default=0.01, help="LR noise std (relative, x |y|.mean())")
+    pd.add_argument("--freq_reg", type=float, default=0.0,
+                    help="frequency-aware prior-precision boost gamma (0 = plain data step; best per cell "
+                         "in Table tab:sr, e.g. 0.5 for the anti-alias operator at sigma_y=0.01)")
     pd.add_argument("--out", default="results/sr_demo")
     pd.add_argument("--seed", type=int, default=0, help="fixes the LR noise so baselines share the obs")
     pd.set_defaults(func=cmd_demo)

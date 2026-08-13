@@ -32,9 +32,9 @@ model/     ihdm.py · cold_diffusion.py · dps.py + backbones: ihdm_backbone/ dp
 solver/    base.py (scale_matched_solver = the restoration loop) · hqs.py (MAPCorrection) · init.py
 ops/       transforms.py (DCT) · deblur.py · spectral.py · motion_spatial.py · superres.py · heat.py
 utils/     pipeline.py (shared IO / build_prior / ‖A‖=1 / CG / freq-reg / metrics) · metrics.py · seed.py
-scripts/   REUSABLE pipeline only: deblur.py · sr.py · ct.py · run_dps.py · run_tv_hqs.py ·
-           run_tv_cg.py · run_tests.py · train_ihdm*.py · make_figure.py · crop_score.py ·
-           score_dir.py (generic dir-vs-dir scorer)
+scripts/   REUSABLE pipeline only: deblur.py · sr.py · inpainting.py (re-blur companion + RePaint
+           resampling) · ct.py · run_dps.py · run_tv_hqs.py · run_tv_cg.py · run_tests.py ·
+           train_ihdm*.py · make_figure.py · crop_score.py · score_dir.py (generic dir-vs-dir scorer)
 scratchpad/ RETIRED one-off scripts: task-specific eval drivers (a1_*.sh), old rerun_*.sh, ablations
 data/      loaders.py + celebahq256/ ffhq256/ …          tests/  gates.py (numerical gates)
 checkpoint/ ihdm/ihdm_ffhq256_full.pth (211M) · cold_diffusion/ffhq256.pth · dps/ffhq_10m.pt (94M)

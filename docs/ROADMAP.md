@@ -103,8 +103,20 @@ being re-run at `n=200` (A1-1); still to run on ImageNet (A1-2).
 
 ## A3 — Breadth (widens acceptance)
 
-9. **Inpainting operator** (box / random mask) — canonical DDNM/DDRM benchmark, cheap to add;
-   omitting it reads as avoidance. (Note nonlinear tasks as out-of-scope: framework is linear.)
+9. ✅ **DONE (2026-08-12) — Inpainting operator.** Report Table 12 `tab:inpaint`. **NOT cheap** as
+   imagined — became a real method sub-contribution. A mask doesn't commute with the heat blur
+   (`M K_t ≠ K_t M`) → **no intertwining companion `L_t`**; naive soft/hard projection FAIL (worse than
+   mean-fill: the deblurring prior can't take sharp-observed + hole inputs OOD). **Fix = re-blur
+   companion** (composite observed+hole-estimate, blur to level t, pin observed region = approximate
+   `L_t`) **+ RePaint-style resampling U=5** (propagates data into holes; fixes a bimodal ~1/3-divergence
+   the re-blur alone had; noise injection did NOT help). **Results (n=50, re-blur+U5):** random keep
+   70/50/30% → hole 30.63/29.86/28.65, LPIPS 0.013/0.030/0.072, **0 failures** (robust). **Head-to-head
+   fixed 50% mask n=16: ours BEATS DDRM on all metrics** (hole 29.97 vs 27.70, SSIM .941 vs .871, LPIPS
+   .029 vs .084). **Limitation (honest):** large CONTIGUOUS box (37.5%) fails (hole 10.73) — no observed
+   pixel near the interior, heat prior deblurs not synthesizes → needs a generative/VP prior (future).
+   **Cost:** U=5 = ~1000 NFE (5× base). Prototypes in `scratchpad/inpaint_*.py` (Mask op, re-blur,
+   resampling); DDRM mask hook `DDRM_MASK_NPY` in `runners/diffusion.py` (guard-safe). **Follow-up:**
+   promote to `scripts/inpaint.py` + registry if kept.
 10. **Qualitative grids** per operator vs baselines, plus the **speckle-without-reg failure case**
     (motivates the freq-reg contribution visually). Keep the transfer-profile figure.
 11. Keep the existing **freq-aware γ ablation** (`tab:regablation`, `tab:regablation2`).
