@@ -117,8 +117,19 @@ being re-run at `n=200` (A1-1); still to run on ImageNet (A1-2).
    **Cost:** U=5 = ~1000 NFE (5× base). Prototypes in `scratchpad/inpaint_*.py` (Mask op, re-blur,
    resampling); DDRM mask hook `DDRM_MASK_NPY` in `runners/diffusion.py` (guard-safe). **Follow-up:**
    promote to `scripts/inpaint.py` + registry if kept.
-10. **Qualitative grids** per operator vs baselines, plus the **speckle-without-reg failure case**
-    (motivates the freq-reg contribution visually). Keep the transfer-profile figure.
+10. ✅ **DONE (2026-08-13) — Qualitative grids + speckle failure case.** All figures in `docs/figures/`
+    (gitignored, rebuild recipes in `[[report-figures]]` memory), each on its **best per-cell reg**:
+    per-operator grids Clean|Obs|TV|cold|IHDM|DPS — `figure_gaussian.png` (γ=0.25), `figure_motion.png`
+    (γ=0.5), **`figure_defocus.png` NEW** (γ=0; IHDM 27.81 leads); SR method grid `figure_sr.png`
+    (γ=4) and inpainting head-to-head `figure_inpaint.png` (ours 29.97 vs DDRM 27.26). **Speckle
+    failure case `figure_speckle.png` NEW**: x4 anti-alias SR σ_y=0.01, SMDC γ=0 (no reg → transition-band
+    speckle) vs **γ=4** (freq-reg removes it), +1.44 dB, with flattest-patch zoom insets. **γ chosen for
+    VISION over PSNR (user rule 2026-08-13): γ=0.5 still speckles, γ=4 is clean — and here also best PSNR
+    (sweep peak); SR grid regenerated at γ=4 too. Caveat: table tab:sr still lists best=γ=0.5, resolve if
+    inserting.** (Tried the pure-box operator for a more dramatic case — no visible per-image γ=0↔γ=4 diff;
+    the box payoff is an n=200 statistical effect only, so anti-alias is the honest demo.) Transfer-profile figure kept
+    (`transfer_profiles.{png,pdf}`). Only gaussian/motion are `\includegraphics`'d so far; defocus +
+    speckle are prepared but not yet inserted (awaiting go-ahead).
 11. Keep the existing **freq-aware γ ablation** (`tab:regablation`, `tab:regablation2`).
 
 ## Execution discipline (carry into every re-run — a broken baseline makes our win look fake)

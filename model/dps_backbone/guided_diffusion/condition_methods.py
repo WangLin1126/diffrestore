@@ -86,6 +86,58 @@ class PosteriorSampling(ConditioningMethod):
         x_t -= norm_grad * self.scale
         return x_t, norm
         
+@register_conditioning_method(name='pigdm')
+class PseudoinverseGuidedDiffusion(ConditioningMethod):
+    """PiGDM (Song et al., ICLR 2023): Pseudoinverse-Guided Diffusion Models.
+
+    Replaces the DPS gradient of ``||y - A x0_hat||`` with the *pseudoinverse-guided* gradient
+    ``(d x0_hat / d x_t)^T A^T (r_t^2 A A^T + sigma_y^2 I)^{-1} (y - A x0_hat)``. Under PiGDM's
+    orthonormal-rows approximation ``A A^T ~= I`` the preconditioner collapses to the scalar
+    ``1 / (r_t^2 + sigma_y^2)``, which needs only the operator's forward/adjoint (adjoint supplied by
+    autograd through ``operator.forward``), so it applies to every operator we use.
+
+    ``r_t^2 = (1 - abar_t) / abar_t`` is the standard PiGDM estimate variance. The sampler does not
+    pass ``t``, so we track the reverse step internally: ``conditioning`` is called once per step in
+    strictly decreasing ``t`` (num_timesteps-1 -> 0). Pass ``alphas_cumprod`` (numpy/torch, len =
+    num_timesteps) at construction; call ``reset()`` before each new image.
+
+    NOTE (unvalidated): ``scale`` still needs tuning to reproduce the DPS-backbone's *published* SR
+    number on a standard operator before this baseline is trusted (guard discipline in ROADMAP).
+    """
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.scale = kwargs.get('scale', 1.0)
+        self.sigma_y = float(kwargs.get('sigma_y', 0.0))
+        ac = kwargs.get('alphas_cumprod', None)
+        self.abar = None if ac is None else torch.as_tensor(ac, dtype=torch.float32)
+        self.reset()
+
+    def reset(self):
+        self._step = None                      # set on first call to (num_timesteps - 1)
+
+    def _r2(self, device):
+        if self.abar is None:                  # fall back to a plain unit variance if not supplied
+            return 1.0
+        if self._step is None:
+            self._step = self.abar.numel() - 1
+        a = self.abar[self._step].to(device).clamp_min(1e-8)
+        self._step = max(self._step - 1, 0)
+        return ((1.0 - a) / a)
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, **kwargs):
+        r2 = self._r2(x_prev.device)
+        residual = measurement - self.operator.forward(x_0_hat, **kwargs)
+        norm = torch.linalg.norm(residual)
+        # scalar-preconditioned residual (A A^T ~= I):  v = (y - A x0) / (r_t^2 + sigma_y^2)
+        v = (residual / (r2 + self.sigma_y ** 2)).detach()
+        # vector-Jacobian product: g = (d A x0_hat / d x_prev)^T v  = (d x0_hat/d x_prev)^T A^T v
+        s = (self.operator.forward(x_0_hat, **kwargs) * v).sum()
+        grad = torch.autograd.grad(outputs=s, inputs=x_prev)[0]
+        # PiGDM guidance = (d x0_hat/d x_t)^T A^T (r^2 A A^T + s^2 I)^{-1} (y - A x0). The 1/(r^2+s^2)
+        # preconditioner already carries the r_t scaling, so NO extra r_t^2 factor here.
+        x_t = x_t + self.scale * grad
+        return x_t, norm
+
 @register_conditioning_method(name='ps+')
 class PosteriorSamplingPlus(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):

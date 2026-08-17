@@ -488,6 +488,17 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_defocus.png}
+\caption{Defocus deblur (disk PSF, radius $7$) at $\sigma_y=0.05$ on realistic reflect-boundary
+observations, full frame. The disk is both-axes symmetric hence DCT-diagonal, so IHDM, cold and TV
+all use the closed-form DCT-HQS data step (no CG); the learned IHDM prior leads distortion
+(Table~\ref{tab:defocus}). Reg $\gamma{=}0$ (defocus is speckle-free;
+Table~\ref{tab:regablation}).}
+\label{fig:defocus}
+\end{figure}
+
 \paragraph{Super-resolution and a DDRM baseline.}
 Super-resolution ($\times4$) uses the operator $\A=\text{avg-pool}_4\!\circ\!B_{\text{aa}}$: an
 anti-alias Gaussian blur followed by area decimation. Unlike the deblur operators, $\A$ has a
@@ -515,8 +526,8 @@ distortion/perception split nonetheless persists---SMDC$+$IHDM leads PSNR/SSIM a
 edges it out on distortion; DiffPIR wins LPIPS throughout. The reg's role also flips with the operator:
 on the milder box null space the low-noise cell prefers $\gamma{=}0$ (flat, noise-free), whereas at
 $\sigma_y{=}0.05$ the box's poorer transition band makes speckle control pay off strongly---the sweep
-is unimodal with a broad peak at $\gamma{=}4$ ($27.44\!\to\!\mathbf{27.80}$\,dB, LPIPS
-$0.353\!\to\!0.316$, SSIM $0.783\!\to\!0.806$; turning over only past $\gamma{=}8$)---a far larger
+is unimodal with a broad peak at $\gamma{=}4$ ($27.35\!\to\!\mathbf{27.70}$\,dB, LPIPS
+$0.353\!\to\!0.320$, SSIM $0.772\!\to\!0.795$; turning over only past $\gamma{=}8$)---a far larger
 payoff than the anti-alias operator's flat $\gamma$-plateau, exactly because the box is a poorer
 low-pass with more transition-band noise to suppress.
 
@@ -564,6 +575,19 @@ Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_sr.png}
+\caption{Super-resolution ($\times4$, anti-alias avg-pool) at $\sigma_y=0.01$, held-out
+CelebA-HQ-256, on the \emph{same} operator and observation: bicubic upsample, DPS, TV$+$CG, and
+SMDC$+$IHDM. SMDC$+$IHDM leads distortion (PSNR/SSIM) at low noise (Table~\ref{tab:sr}). For the
+qualitative panels the reg is set to $\gamma{=}4$ to suppress transition-band speckle
+(Fig.~\ref{fig:speckle}); this is a stronger, \emph{perceptually} motivated setting than the
+flat-plateau PSNR optimum $\gamma\!\approx\!0.5$ used in the benchmark tables
+(Table~\ref{tab:regablation}).}
+\label{fig:sr}
+\end{figure}
 
 \paragraph{Scale-matched vs.\ naive data consistency (the title ablation).}
 Every result above uses the \emph{scale-matched} data step: at reverse level $t$ the measurement is
@@ -801,19 +825,19 @@ noise (SVD noise amplification), not a graceful degradation.}
 
 \paragraph{Frequency-aware reg ablation.}
 Table~\ref{tab:regablation} sweeps the reg $\gamma$ (Eq.~\ref{eq:wienerreg}) per degradation. The
-only \emph{large distortion} gain is \textbf{motion} ($+0.69$\,dB PSNR, $+0.038$ SSIM at
+only \emph{large distortion} gain is \textbf{motion} ($+0.66$\,dB PSNR, $+0.036$ SSIM at
 $\sigma_y{=}0.05$), whose asymmetric reflect operator leaves a genuine weak band the prior fills.
 Elsewhere the reg is at best a near distortion-free \emph{perceptual} clean-up on a flat PSNR
 plateau: \textbf{Gaussian} is flat to $\pm0.01$\,dB across $\gamma\in[0.1,0.5]$ while LPIPS falls
-monotonically ($0.360\!\to\!0.353$, optimum $\gamma\!\approx\!0.4$), and \textbf{low-noise SR} holds
-a flat PSNR plateau ($27.20$\,dB across $\gamma\in[0,0.4]$) with LPIPS falling monotonically
-($0.355\!\to\!0.349$ over $[0,0.4]$, $\to\!0.348$ at $\gamma{=}0.5$) for a $0.01$\,dB cost. It is monotonically \emph{harmful} where the operator is (nearly) full-rank or the measurement
-noise---not speckle---dominates: \textbf{defocus} (every $\gamma>0$ hurts, $-0.02$ to $-0.14$\,dB)
-and \textbf{higher-noise SR} ($-0.19$\,dB at $\sigma_y{=}0.05$); pushing SR to $\gamma\!\ge\!2$
-costs $0.15$--$0.31$\,dB even at low noise. The lone \emph{distortion} exception among the SR rows is
+monotonically ($0.362\!\to\!0.356$, optimum $\gamma\!\approx\!0.4$), and \textbf{low-noise SR} holds
+a flat PSNR plateau ($27.11$\,dB across $\gamma\in[0,0.4]$) with LPIPS falling monotonically
+($0.359\!\to\!0.354$ over $[0,0.4]$, $\to\!0.353$ at $\gamma{=}0.5$) for a $0.00$\,dB cost. It is monotonically \emph{harmful} where the operator is (nearly) full-rank or the measurement
+noise---not speckle---dominates: \textbf{defocus} (every $\gamma>0$ hurts, $-0.01$ to $-0.13$\,dB)
+and \textbf{higher-noise SR} ($-0.18$\,dB at $\sigma_y{=}0.05$); larger $\gamma$ only ever costs on the
+low-noise \emph{aa}-SR plateau. The lone \emph{distortion} exception among the SR rows is
 the \textbf{pure box downsample}: stripping the anti-alias pre-blur leaves a poorer low-pass with a
-real transition band, so at $\sigma_y{=}0.05$ the reg buys a genuine, unimodal $+0.36$\,dB (peak
-$\gamma{=}4$: $27.44\!\to\!27.80$\,dB, LPIPS $0.353\!\to\!0.316$, SSIM $0.783\!\to\!0.806$; it turns
+real transition band, so at $\sigma_y{=}0.05$ the reg buys a genuine, unimodal $+0.35$\,dB (peak
+$\gamma{=}4$: $27.35\!\to\!27.70$\,dB, LPIPS $0.353\!\to\!0.320$, SSIM $0.772\!\to\!0.795$; it turns
 over only past $\gamma{=}8$)---far more than the anti-alias operator's flat $\gamma$-plateau, and a
 clean confirmation that the reg's payoff tracks how much transition-band noise the operator admits.
 Hence the per-noise operating points (Table~\ref{tab:regablation2}): $\gamma$ \emph{shrinks} with
@@ -826,50 +850,50 @@ rather than active notches.
 \begin{table}[h]
 \centering
 \caption{Frequency-aware data-regularization ablation: IHDM$+$HQS as a function of the
-prior-precision boost $\gamma$, $n=16$ (deblur at $\sigma_y{=}0.05$; SR at both noise levels).
+prior-precision boost $\gamma$, $n=50$ (deblur at $\sigma_y{=}0.05$; SR at both noise levels).
 \emph{aa} = anti-alias Gaussian $+$ avg-pool (the default operator); \emph{box} = pure box
 downsample (avg-pool, no anti-alias; DDRM's \texttt{sr4}).
 $\Delta$ is the PSNR change from $\gamma{=}0$; bold = best PSNR/LPIPS per block. Gaussian is a flat
-plateau (PSNR $\approx\!27.14$ over $\gamma\in[0.1,0.4]$, LPIPS improving monotonically); defocus
+plateau (PSNR $\approx\!27.04$ over $\gamma\in[0.1,0.4]$, LPIPS improving monotonically); defocus
 and higher-noise \emph{aa}-SR are monotonically hurt; low-noise \emph{aa}-SR is a flat PSNR plateau
-($27.20$ over $\gamma\in[0,0.4]$) with LPIPS improving monotonically. The \emph{box} operator, a
+($27.11$ over $\gamma\in[0,0.4]$) with LPIPS improving monotonically. The \emph{box} operator, a
 poorer low-pass with a genuine transition band, is the one case where the reg is a \emph{large
 distortion} lever: low-noise still prefers $\gamma{=}0$, but $\sigma_y{=}0.05$ has a unimodal peak
-at $\gamma{=}4$ ($+0.36$\,dB, LPIPS $0.353\!\to\!0.316$), turning over past $\gamma{=}8$.}
+at $\gamma{=}4$ ($+0.35$\,dB, LPIPS $0.353\!\to\!0.320$), turning over past $\gamma{=}8$.}
 \label{tab:regablation}
 \begin{tabular}{llcccc}
 \toprule
 Degradation ($\sigma_y$) & $\gamma$ & PSNR & SSIM & LPIPS & $\Delta$PSNR \\
 \midrule
-\multirow{4}{*}{Gaussian (0.05)}   & 0    & 27.13 & 0.778 & 0.360 & \\
-                                   & 0.3  & 27.14 & 0.779 & 0.354 & $+0.01$ \\
-                                   & 0.4  & \textbf{27.14} & 0.779 & \textbf{0.353} & $+0.01$ \\
-                                   & 0.5  & 27.13 & 0.779 & 0.353 & $+0.00$ \\
+\multirow{4}{*}{Gaussian (0.05)}   & 0    & 27.03 & 0.765 & 0.362 & \\
+                                   & 0.3  & 27.04 & 0.767 & 0.357 & $+0.01$ \\
+                                   & 0.4  & \textbf{27.04} & 0.767 & \textbf{0.356} & $+0.01$ \\
+                                   & 0.5  & 27.03 & 0.767 & 0.356 & $+0.00$ \\
 \midrule
-\multirow{2}{*}{Motion (0.05)}     & 0    & 29.74 & 0.809 & \textbf{0.119} & \\
-                                   & 0.5  & \textbf{30.43} & \textbf{0.847} & 0.124 & $+0.69$ \\
+\multirow{2}{*}{Motion (0.05)}     & 0    & 29.70 & 0.805 & \textbf{0.117} & \\
+                                   & 0.5  & \textbf{30.36} & \textbf{0.841} & 0.123 & $+0.66$ \\
 \midrule
-\multirow{4}{*}{Defocus (0.05)}    & \textbf{0}    & \textbf{27.82} & 0.795 & \textbf{0.314} & \\
-                                   & 0.1  & 27.80 & 0.795 & 0.316 & $-0.02$ \\
-                                   & 0.3  & 27.75 & 0.794 & 0.321 & $-0.07$ \\
-                                   & 0.5  & 27.68 & 0.792 & 0.326 & $-0.14$ \\
+\multirow{4}{*}{Defocus (0.05)}    & \textbf{0}    & \textbf{27.73} & 0.783 & \textbf{0.316} & \\
+                                   & 0.1  & 27.72 & 0.783 & 0.319 & $-0.01$ \\
+                                   & 0.3  & 27.67 & 0.782 & 0.324 & $-0.06$ \\
+                                   & 0.5  & 27.60 & 0.781 & 0.329 & $-0.13$ \\
 \midrule
-\multirow{4}{*}{SR aa (0.01)}      & 0    & \textbf{27.20} & 0.783 & 0.355 & \\
-                                     & 0.1  & 27.20 & 0.784 & 0.353 & $+0.00$ \\
-                                     & 0.3  & 27.20 & 0.785 & 0.350 & $+0.00$ \\
-                                     & 0.5  & 27.19 & \textbf{0.785} & \textbf{0.348} & $-0.01$ \\
+\multirow{4}{*}{SR aa (0.01)}      & 0    & 27.11 & 0.771 & 0.359 & \\
+                                     & 0.1  & 27.11 & 0.772 & 0.356 & $+0.00$ \\
+                                     & 0.3  & \textbf{27.12} & 0.773 & 0.354 & $+0.01$ \\
+                                     & 0.5  & 27.11 & \textbf{0.773} & \textbf{0.353} & $+0.00$ \\
 \midrule
-\multirow{2}{*}{SR aa (0.05)}      & 0    & \textbf{25.40} & \textbf{0.739} & 0.401 & \\
-                                     & 0.5  & 25.21 & 0.735 & \textbf{0.399} & $-0.19$ \\
+\multirow{2}{*}{SR aa (0.05)}      & 0    & \textbf{25.35} & \textbf{0.723} & 0.408 & \\
+                                     & 0.5  & 25.17 & 0.719 & \textbf{0.407} & $-0.18$ \\
 \midrule
-\multirow{3}{*}{SR box (0.01)}     & \textbf{0}    & \textbf{28.60} & \textbf{0.834} & \textbf{0.252} & \\
-                                     & 0.5  & 28.58 & 0.834 & 0.253 & $-0.02$ \\
-                                     & 1    & 28.57 & 0.834 & 0.254 & $-0.03$ \\
+\multirow{3}{*}{SR box (0.01)}     & \textbf{0}    & \textbf{28.52} & 0.826 & \textbf{0.258} & \\
+                                     & 0.5  & 28.51 & 0.826 & 0.259 & $-0.01$ \\
+                                     & 1    & 28.50 & 0.826 & 0.260 & $-0.02$ \\
 \midrule
-\multirow{4}{*}{SR box (0.05)}     & 0    & 27.44 & 0.783 & 0.353 & \\
-                                     & 2    & 27.73 & 0.803 & 0.321 & $+0.29$ \\
-                                     & 4    & \textbf{27.80} & \textbf{0.806} & \textbf{0.316} & $+0.36$ \\
-                                     & 8    & 27.76 & 0.805 & 0.322 & $+0.32$ \\
+\multirow{4}{*}{SR box (0.05)}     & 0    & 27.35 & 0.772 & 0.353 & \\
+                                     & 2    & 27.64 & 0.791 & 0.324 & $+0.29$ \\
+                                     & 4    & \textbf{27.70} & \textbf{0.795} & \textbf{0.320} & $+0.35$ \\
+                                     & 8    & 27.66 & 0.793 & 0.326 & $+0.31$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -877,7 +901,7 @@ Degradation ($\sigma_y$) & $\gamma$ & PSNR & SSIM & LPIPS & $\Delta$PSNR \\
 \begin{table}[h]
 \centering
 \caption{Reg $\gamma$ vs \emph{noise}: IHDM PSNR (dB) sweep for Gaussian ($+$HQS) and motion ($+$CG),
-$n=16$, at each $\sigma_y$; bold = best, $\gamma^\ast$ = argmax (the value used in
+$n=50$, at each $\sigma_y$; bold = best, $\gamma^\ast$ = argmax (the value used in
 Tables~\ref{tab:gauss},~\ref{tab:motion}). The optimal $\gamma$ \emph{decreases} with noise for
 both: motion's near-zero notches inject the most speckle when data is trusted most (low noise), and
 the full-rank Gaussian is speckle-free so its reg only ever costs. This is the mirror image of the
@@ -889,16 +913,29 @@ notches (motion, low-noise) or a prior-filled cutoff (SR, high-noise).}
 \toprule
 Operator & $\sigma_y$ & $\gamma{=}0$ & $0.25$ & $0.5$ & $1$ & $2$ & $\gamma^\ast$ \\
 \midrule
-\multirow{3}{*}{Gaussian} & 0.05 & 27.13 & \textbf{27.14} & 27.13 & 27.08 & 26.98 & 0.25 \\
-                          & 0.10 & \textbf{26.47} & 26.45 & 26.41 & 26.34 & 26.18 & 0 \\
-                          & 0.20 & \textbf{25.41} & 25.32 & 25.24 & 25.08 & 24.79 & 0 \\
+\multirow{3}{*}{Gaussian} & 0.05 & 27.03 & \textbf{27.04} & 27.03 & 26.99 & 26.90 & 0.25 \\
+                          & 0.10 & \textbf{26.38} & 26.36 & 26.33 & 26.25 & 26.10 & 0 \\
+                          & 0.20 & \textbf{25.32} & 25.25 & 25.17 & 25.03 & 24.77 & 0 \\
 \midrule
-\multirow{3}{*}{Motion}   & 0.05 & 29.74 & 30.30 & \textbf{30.43} & 30.35 & 29.96 & 0.5 \\
-                          & 0.10 & \textbf{28.41} & 28.38 & 28.32 & 28.19 & 27.96 & 0 \\
-                          & 0.20 & \textbf{26.79} & 26.74 & 26.70 & 26.60 & 26.42 & 0 \\
+\multirow{3}{*}{Motion}   & 0.05 & 29.70 & 30.24 & \textbf{30.36} & 30.27 & 29.86 & 0.5 \\
+                          & 0.10 & \textbf{28.29} & 28.26 & 28.19 & 28.05 & 27.82 & 0 \\
+                          & 0.20 & \textbf{26.61} & 26.57 & 26.52 & 26.42 & 26.24 & 0 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_speckle.png}
+\caption{The frequency-aware reg, visualized ($\times4$ anti-alias SR, $\sigma_y{=}0.01$). Per image,
+left to right: clean, SMDC with $\gamma{=}0$ (plain data step) with a flat-patch zoom, then SMDC with
+$\gamma{=}4$ and its zoom. The plain data step amplifies the measurement noise into transition-band
+\emph{speckle} in the operator's null space (visible in the $\gamma{=}0$ zoom); the reg suppresses it.
+$\gamma{=}4$ is chosen to make the effect visible---a \emph{perceptual} setting stronger than the
+PSNR-plateau optimum (Table~\ref{tab:regablation}), consistent with the reg being a near
+distortion-free perceptual clean-up on this operator.}
+\label{fig:speckle}
+\end{figure}
 
 \paragraph{Beyond ill-conditioned operators: inpainting.}
 Every operator above is full-support and \emph{ill-conditioned} (blur, downsample), the regime where
@@ -947,6 +984,16 @@ box $37.5\%$ (contig.) & IHDM & $19.25$\pmstd{2.77} & $10.73$\pmstd{2.77} & $0.8
 \end{tabular}
 \end{table}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_inpaint.png}
+\caption{Inpainting on a fixed $50\%$-keep random mask, held-out CelebA-HQ-256: clean, masked input,
+SMDC$+$IHDM (re-blur companion with $U{=}5$ resampling), and DDRM on the \emph{same} mask.
+SMDC$+$IHDM recovers the missing region more faithfully (missing-region PSNR $29.97$ vs $27.70$\,dB;
+Table~\ref{tab:inpaint}).}
+\label{fig:inpaint}
+\end{figure}
+
 \paragraph{Noisy inpainting.}
 We add measurement noise to the observed pixels (fixed random $70\%$-keep mask, $n{=}16$;
 Table~\ref{tab:inpaintnoise}). At low noise ($\sigma_y{=}0.01$) IHDM leads on \emph{every} metric. At
@@ -984,14 +1031,14 @@ We repeat the full comparison at higher noise, $\sigma_y\in\{0.10,0.20\}$
 (Tables~\ref{tab:gauss},~\ref{tab:motion},~\ref{tab:defocus};
 TV re-tuned per noise). The rankings are largely stable. On Gaussian, IHDM$+$HQS (best per-noise
 reg, $\gamma{=}0.25\!\to\!0$; Table~\ref{tab:regablation2}) has the best PSNR/SSIM at
-$\sigma_y\in\{0.05,0.10\}$ ($27.14\!\to\!26.47$\,dB) and DPS the best
+$\sigma_y\in\{0.05,0.10\}$ ($27.30\!\to\!26.60$\,dB) and DPS the best
 LPIPS; at the highest noise $\sigma_y{=}0.20$ the DDRM baseline overtakes it on both PSNR and SSIM
-($25.66$ vs $25.41$\,dB), its heavily range-space-truncated inverse proving more noise-robust than
+($25.73$ vs $25.47$\,dB), its heavily range-space-truncated inverse proving more noise-robust than
 the closed-form MAP once the measurement is very noisy. On motion
 (reflect boundaries), IHDM$+$CG is the best full-frame method at every noise level on distortion,
 while DiffPIR---FFT-based and thus applicable to the non-separable kernel where DDRM is not---wins
 LPIPS by a wide margin. Defocus mirrors Gaussian (same closed-form DCT-HQS): IHDM
-leads distortion at every level ($27.81\!\to\!26.64\!\to\!25.49$\,dB), DiffPIR wins LPIPS. All methods lose
+leads distortion at every level ($27.97\!\to\!26.79\!\to\!25.57$\,dB), DiffPIR wins LPIPS. All methods lose
 $\sim\!2$--$4$\,dB from $\sigma_y{=}0.05$ to $0.20$, but the ordering is preserved --- the
 structural conclusions are not artifacts of a single noise level.
 
