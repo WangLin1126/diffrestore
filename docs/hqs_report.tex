@@ -6,6 +6,12 @@
 \usepackage{graphicx}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+% Figures are gated behind \ifshowfigs so the PDF stays small/fast to render.
+% Flip to \showfigstrue to embed the images again. Floats, captions and \labels are kept either way.
+\newif\ifshowfigs\showfigsfalse
+\newcommand{\figimg}[1]{\ifshowfigs\includegraphics[width=\linewidth]{#1}\else
+  \fbox{\parbox[c][5cm][c]{0.97\linewidth}{\centering\ttfamily\small
+  [figure omitted for fast compile --- \detokenize{#1}]}}\fi}
 \newcommand{\bm}[1]{\boldsymbol{#1}}  % bm package absent in TinyTeX repo; \boldsymbol from amsmath
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
@@ -28,10 +34,12 @@ An HQS Framework for Linear Image Restoration}}
 \maketitle
 
 \begin{abstract}
-We present an image-restoration method that couples a \emph{non-hot} diffusion prior. The forward blur operator of the prior, $\K_t$, and the measurement operator $\A$
-are simultaneously diagonalized in a fixed orthogonal transform $\Phimat$. We give the problem statement, the algorithm, and numerical results on held-out CelebA-HQ-256 for
-Gaussian, motion, and defocus deblurring (and $\times4$ super-resolution), benchmarked at $n{=}200$
-against DPS, DDRM, DiffPIR, and DDNM.
+We present an image-restoration method that couples a \emph{non-hot} diffusion prior with a
+scale-matched data-consistency step. The prior's forward blur $\K_t$ and the measurement operator
+$\A$ share a fixed orthogonal transform $\Phimat$ that diagonalizes both, which turns each reverse
+step into a closed-form MAP update. We give the problem statement, the algorithm, and numerical
+results on held-out CelebA-HQ-256 for Gaussian, motion, and defocus deblurring and $\times4$
+super-resolution, benchmarked at $n{=}200$ against DPS, DDRM, DiffPIR, and DDNM.
 \end{abstract}
 
 \section{Problem definition}
@@ -189,11 +197,11 @@ $\bigl(w_p\I+\mathbf R+w_y\mathbf H^{\!\top}\mathbf H\bigr)\x=\bigl(w_p\I+\mathb
 with $\lvert\hat a[j]\rvert^{2}$ taken from a Hutchinson estimate of
 $\operatorname{diag}(\A^{\!\top}\A)$ in the DCT basis. Setting $\gamma\!=\!0$
 recovers~\eqref{eq:wiener}; we use $\gamma\!=\!0.5$ by default for deblur (a small, near
-distortion-free speckle clean). The reg's value is strongly regime-dependent
-(Table~\ref{tab:regablation}): it pays off when the data term dominates and the transition-band
-\emph{speckle}---not the measurement noise---is the limiting error, i.e.\ for motion and for
-low-noise super-resolution ($\gamma\!\approx\!0.5$); as the noise grows the optimal $\gamma$ shrinks
-to $0$, since the error is then genuine noise the reg cannot remove.
+distortion-free speckle clean). The reg's value is regime-dependent (Table~\ref{tab:regablation}).
+It pays off when the data term dominates and transition-band \emph{speckle}---not measurement
+noise---is the limiting error: motion and low-noise super-resolution ($\gamma\!\approx\!0.5$). As the
+noise grows the optimal $\gamma$ shrinks to $0$, since the error is then genuine noise the reg cannot
+remove.
 
 \paragraph{Basis selection and the boundary question.}
 For Gaussian/heat $\A$, $\Phimat=$ DCT and $\hat a$ is real, so $\A$ shares the prior's
@@ -209,9 +217,9 @@ whenever $\A$ is not DCT-diagonal, solve the data step in the \emph{spatial} dom
 gradient with the true reflect-boundary operator $\mathbf H$ (Eq.~\ref{eq:cg}). CG uses only
 $\mathbf H\!\cdot$ and $\mathbf H^{\!\top}\!\cdot$ and never diagonalizes $\A$, so it needs
 \emph{no} shared eigenbasis between $\A$ and the prior: basis-matching is unnecessary. The
-scale-match~\eqref{eq:scalematch} then only requires $\A\K_t\approx\K_t\A$, which is exact for
-Gaussian in the DCT basis and holds to $\sim\!10^{-3}$ for reflect-boundary motion---and the
-reflect/Neumann convention is also the physically correct one for natural-image boundaries.
+scale-match~\eqref{eq:scalematch} then only requires $\A\K_t\approx\K_t\A$: exact for Gaussian in
+the DCT basis, and accurate to $\sim\!10^{-3}$ for reflect-boundary motion. The reflect/Neumann
+convention is also the physically correct one for natural-image boundaries.
 
 \paragraph{Parameter settings.}
 Table~\ref{tab:params} is the full parameter sheet. Only the ratio $\alpha_p/\alpha_y$
@@ -298,12 +306,10 @@ distortion across all noise levels.
 $\sigma_y$ (absolute std on $[-1,1]$). IHDM uses its best per-noise reg ($\gamma{=}0.25$ at
 $\sigma_y{=}0.05$, $\gamma{=}0$ at $0.10/0.20$): the reg barely moves the full-rank Gaussian and is
 dropped as noise grows (Table~\ref{tab:regablation2}).
-DDRM inverts the \emph{same} separable Gaussian via its SVD replacement, with $\sigma_0=\sigma_y/2$
-(DDRM defines noise on $[0,1]$, then doubles to $[-1,1]$); MC is omitted for DDRM as it uses its own
-range-space forward. DiffPIR (NFE${=}100$, same FFHQ prior) is a plug-and-play HQS baseline that
-shares our per-step MAP form but uses FFT (circular-boundary) data consistency and the same
-$\sigma_0{=}\sigma_y/2$ noise convention; MC omitted likewise. Bold = best PSNR/SSIM/LPIPS per noise
-block.}
+DDRM inverts the \emph{same} separable Gaussian via its SVD replacement; DiffPIR (NFE${=}100$, same
+FFHQ prior) shares our per-step MAP form but uses FFT (circular-boundary) data consistency. Both use
+the $\sigma_0{=}\sigma_y/2$ noise convention (noise defined on $[0,1]$, doubled to $[-1,1]$) and omit
+MC, since they use their own range-space forward. Bold = best PSNR/SSIM/LPIPS per noise block.}
 \label{tab:gauss}
 \begin{tabular}{llcccc}
 \toprule
@@ -407,7 +413,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_gaussian.png}
+\figimg{figures/figure_gaussian.png}
 \caption{Gaussian deblur, held-out CelebA-HQ-256 (per-column mean PSNR/SSIM/LPIPS in the
 headers). With $\A$ and the heat prior sharing the DCT basis, the non-hot HQS priors (cold,
 IHDM) win distortion; the diffusion baselines (DPS, DiffPIR) win perceptual LPIPS.}
@@ -416,7 +422,7 @@ IHDM) win distortion; the diffusion baselines (DPS, DiffPIR) win perceptual LPIP
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_motion.png}
+\figimg{figures/figure_motion.png}
 \caption{Motion deblur (Levin09~\#1) at $\sigma_y=0.05$ on realistic \textbf{reflect-boundary}
 observations, full frame: TV, cold$+$CG, IHDM$+$CG and DPS. TV, cold$+$CG and IHDM$+$CG share the
 spatial-CG data step and reconstruct the full frame cleanly---no iFFT, no wrap---whereas DPS, whose
@@ -490,7 +496,7 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_defocus.png}
+\figimg{figures/figure_defocus.png}
 \caption{Defocus deblur (disk PSF, radius $7$) at $\sigma_y=0.05$ on realistic reflect-boundary
 observations, full frame. The disk is both-axes symmetric hence DCT-diagonal, so IHDM, cold and TV
 all use the closed-form DCT-HQS data step (no CG); the learned IHDM prior leads distortion
@@ -504,15 +510,15 @@ Super-resolution ($\times4$) uses the operator $\A=\text{avg-pool}_4\!\circ\!B_{
 anti-alias Gaussian blur followed by area decimation. Unlike the deblur operators, $\A$ has a
 genuine \emph{null space} (its transfer vanishes above the LR Nyquist), so the plain data step
 amplifies noise into transition-band \emph{speckle}, and the frequency-aware
-reg~\eqref{eq:wienerreg} is doing real work. We compare against \textbf{DDRM}
-(pre-trained FFHQ diffusion, \texttt{ffhq\_10m}) on the \emph{same} operator: because
-$\A=H_{1}\!\otimes\!H_{1}$ is separable, its $256^2\!\times\!256^2$ SVD factors as a Kronecker
-product of the $1$-D SVD, which is exactly the structure DDRM's SVD replacement needs, so DDRM
-inverts our operator to machine precision (the exact $H_1$ is verified against
-$\A$ to $4\times10^{-15}$). Table~\ref{tab:sr} reports both at matched absolute noise
+reg~\eqref{eq:wienerreg} is doing real work. We compare against \textbf{DDRM} (pre-trained FFHQ
+diffusion, \texttt{ffhq\_10m}) on the \emph{same} operator. Because $\A=H_{1}\!\otimes\!H_{1}$ is
+separable, its SVD factors as a Kronecker product of the $1$-D SVD---exactly the structure DDRM's SVD
+replacement needs---so DDRM inverts our operator to machine precision (the exact $H_1$ matches $\A$
+to $4\times10^{-15}$). Table~\ref{tab:sr} reports both at matched absolute noise
 ($\sigma_0=\sigma_y/2$). SMDC$+$IHDM leads PSNR/SSIM at low noise ($\sigma_y{=}0.01$) while DDRM,
-with its stochastic hot-diffusion prior, edges ahead on PSNR/SSIM at $\sigma_y{=}0.05$; DiffPIR wins the
-perceptual LPIPS at both levels---the same distortion/perception split we see against DPS.
+with its stochastic hot-diffusion prior, edges ahead on PSNR/SSIM at $\sigma_y{=}0.05$; the perceptual
+LPIPS goes to the guidance baselines (DiffPIR at $\sigma_y{=}0.01$, PiGDM at $\sigma_y{=}0.05$)---the
+same distortion/perception split we see against DPS.
 Crucially this comparison is \emph{only} possible for separable operators: the Levin motion kernel
 and the disk defocus PSF are non-separable, so their full SVD is intractable and DDRM does not apply
 (the ``--'' rows in Tables~\ref{tab:motion},~\ref{tab:defocus}).
@@ -520,10 +526,11 @@ and the disk defocus PSF are non-separable, so their full SVD is intractable and
 To meet DDRM on \emph{its} home ground we also add the \emph{pure} box downsample (avg-pool, no
 anti-alias), i.e.\ DDRM's native \texttt{sr4} degradation (Table~\ref{tab:sr}, lower block). Dropping
 the anti-alias pre-blur destroys less high-frequency content, so every method starts from a sharper
-bicubic anchor ($27.34$ vs $23.58$\,dB at $\sigma_y{=}0.01$) and the null space is milder; the
-distortion/perception split nonetheless persists---SMDC$+$IHDM leads PSNR/SSIM at low noise
-($+0.80$\,dB over DDRM at $\sigma_y{=}0.01$), while at $\sigma_y{=}0.05$ the operator-matched DDNM
-edges it out on distortion; DiffPIR wins LPIPS throughout. The reg's role also flips with the operator:
+bicubic anchor ($27.34$ vs $23.58$\,dB at $\sigma_y{=}0.01$) and the null space is milder. The
+distortion/perception split still persists: SMDC$+$IHDM leads PSNR/SSIM at low noise ($+0.80$\,dB
+over DDRM at $\sigma_y{=}0.01$), the operator-matched DDNM edges it out on distortion at
+$\sigma_y{=}0.05$, and the guidance baselines win LPIPS (DiffPIR at $\sigma_y{=}0.01$, PiGDM at
+$\sigma_y{=}0.05$). The reg's role also flips with the operator:
 on the milder box null space the low-noise cell prefers $\gamma{=}0$ (flat, noise-free), whereas at
 $\sigma_y{=}0.05$ the box's poorer transition band makes speckle control pay off strongly---the sweep
 is unimodal with a broad peak at $\gamma{=}4$ ($27.35\!\to\!\mathbf{27.70}$\,dB, LPIPS
@@ -536,49 +543,54 @@ low-pass with more transition-band noise to suppress.
 \caption{Super-resolution ($\times4$), held-out CelebA-HQ-256, $n=200$, across noise $\sigma_y$
 (absolute std on $[-1,1]$), on two decimation operators: the anti-alias Gaussian $+$ avg-pool used
 throughout, and a \emph{pure} box downsample (avg-pool, no anti-alias)---DDRM's native \texttt{sr4}
-task. SMDC uses its best reg per cell (anti-alias: $\gamma{=}0.5$ at $0.01$, $\gamma{=}0$ at $0.05$;
-pure: $\gamma{=}0$ at $0.01$, $\gamma{=}4$ at $0.05$). DDRM inverts the \emph{same} operator via its
-separable-SVD replacement ($20$ steps, $\sigma_0=\sigma_y/2$). \textbf{DDNM} inverts the pure box
-operator via its own average-pooling range--null projection ($100$ steps, $\eta{=}0.85$), on the same
-FFHQ prior; its $\sigma_y$ uses the same $[0,1]{\to}[-1,1]$ doubling. \textbf{DiffPIR} solves
-\emph{both} operators by FFT ($100$ steps, $\lambda$ tuned), on the FFHQ prior, fed the effective
-anti-alias (Gaussian${\circledast}$box) / box kernel, on its native sampling grid ($1$-px offset from
-avg-pool). Bold = best PSNR/SSIM/LPIPS per block (over the reconstructions).}
+task. SMDC uses its best per-cell reg (anti-alias: $\gamma{=}0.5/0$ at $\sigma_y{=}0.01/0.05$; box:
+$\gamma{=}0/4$). Baselines run on the same FFHQ prior at $\sigma_0=\sigma_y/2$ (noise on $[0,1]$,
+doubled to $[-1,1]$): DDRM (separable-SVD, $20$ steps), DDNM (box only, average-pooling range--null
+projection, $100$ steps), and DiffPIR (FFT, both operators, $100$ steps). \textbf{PiGDM}$^{\dagger}$
+(pseudoinverse-guided, $1000$-step DPS sampler, scalar $1/(r_t^2{+}\sigma^2)$ preconditioner).
+$^{\dagger}$Guidance temperature tuned \emph{per cell}
+(softer at higher noise; stronger on box, where its $\A\A^{\!\top}\!\approx\!\I$ approximation is
+closer to true). Bold = best per block; PiGDM trails on distortion but takes the best LPIPS in three
+of four cells.}
 \label{tab:sr}
 \begin{tabular}{lllccc}
 \toprule
 Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
 \midrule
-\multirow{8}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
- & \multirow{4}{*}{0.01} & Observation (bicubic) & 23.58\pmstd{1.83} & 0.676 & 0.531 \\
+\multirow{10}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
+ & \multirow{5}{*}{0.01} & Observation (bicubic) & 23.58\pmstd{1.83} & 0.676 & 0.531 \\
  & & SMDC + IHDM ($\gamma{=}0.5$) & \textbf{27.35}\pmstd{2.40} & \textbf{0.776} & 0.343 \\
  & & DDRM & 26.77\pmstd{2.27} & 0.764 & 0.230 \\
  & & DiffPIR & 26.21\pmstd{2.15} & 0.727 & \textbf{0.159} \\
+ & & PiGDM$^{\dagger}$ & 25.53\pmstd{2.11} & 0.709 & 0.163 \\
 \cmidrule{2-6}
- & \multirow{4}{*}{0.05} & Observation (bicubic) & 23.14\pmstd{1.66} & 0.605 & 0.657 \\
+ & \multirow{5}{*}{0.05} & Observation (bicubic) & 23.14\pmstd{1.66} & 0.605 & 0.657 \\
  & & SMDC + IHDM ($\gamma{=}0$) & 25.44\pmstd{2.21} & 0.724 & 0.400 \\
  & & DDRM & \textbf{25.64}\pmstd{2.04} & \textbf{0.732} & 0.250 \\
- & & DiffPIR & 24.69\pmstd{1.91} & 0.681 & \textbf{0.189} \\
+ & & DiffPIR & 24.69\pmstd{1.91} & 0.681 & 0.189 \\
+ & & PiGDM$^{\dagger}$ & 24.25\pmstd{1.90} & 0.672 & \textbf{0.184} \\
 \midrule
-\multirow{10}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
- & \multirow{5}{*}{0.01} & Observation (bicubic) & 27.34\pmstd{2.33} & 0.793 & 0.353 \\
+\multirow{12}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
+ & \multirow{6}{*}{0.01} & Observation (bicubic) & 27.34\pmstd{2.33} & 0.793 & 0.353 \\
  & & SMDC + IHDM ($\gamma{=}0$) & \textbf{28.78}\pmstd{2.72} & \textbf{0.829} & 0.250 \\
  & & DDRM (\texttt{sr4}) & 27.98\pmstd{2.47} & 0.804 & 0.183 \\
  & & DDNM & 28.57\pmstd{2.66} & 0.823 & 0.163 \\
- & & DiffPIR & 27.64\pmstd{2.43} & 0.785 & \textbf{0.109} \\
+ & & DiffPIR & 27.64\pmstd{2.43} & 0.785 & 0.109 \\
+ & & PiGDM$^{\dagger}$ & 27.81\pmstd{2.62} & 0.801 & \textbf{0.092} \\
 \cmidrule{2-6}
- & \multirow{5}{*}{0.05} & Observation (bicubic) & 26.34\pmstd{1.89} & 0.714 & 0.501 \\
+ & \multirow{6}{*}{0.05} & Observation (bicubic) & 26.34\pmstd{1.89} & 0.714 & 0.501 \\
  & & SMDC + IHDM ($\gamma{=}4$) & 27.92\pmstd{2.35} & 0.798 & 0.312 \\
  & & DDRM (\texttt{sr4}) & 27.51\pmstd{2.31} & 0.788 & 0.202 \\
  & & DDNM & \textbf{27.95}\pmstd{2.41} & \textbf{0.801} & 0.187 \\
- & & DiffPIR & 26.93\pmstd{2.16} & 0.752 & \textbf{0.141} \\
+ & & DiffPIR & 26.93\pmstd{2.16} & 0.752 & 0.141 \\
+ & & PiGDM$^{\dagger}$ & 27.10\pmstd{2.25} & 0.771 & \textbf{0.136} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_sr.png}
+\figimg{figures/figure_sr.png}
 \caption{Super-resolution ($\times4$, anti-alias avg-pool) at $\sigma_y=0.01$, held-out
 CelebA-HQ-256, on the \emph{same} operator and observation: bicubic upsample, DPS, TV$+$CG, and
 SMDC$+$IHDM. SMDC$+$IHDM leads distortion (PSNR/SSIM) at low noise (Table~\ref{tab:sr}). For the
@@ -587,6 +599,18 @@ qualitative panels the reg is set to $\gamma{=}4$ to suppress transition-band sp
 flat-plateau PSNR optimum $\gamma\!\approx\!0.5$ used in the benchmark tables
 (Table~\ref{tab:regablation}).}
 \label{fig:sr}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\figimg{figures/figure_sr_box.png}
+\caption{Super-resolution ($\times4$, \textbf{pure box} downsample---avg-pool with no anti-alias,
+DDRM's native \texttt{sr4}) at $\sigma_y=0.01$, on the \emph{same} four images and columns as
+Fig.~\ref{fig:sr} (bicubic, DPS, TV$+$CG, SMDC$+$IHDM). Dropping the anti-alias pre-blur leaves a
+sharper bicubic anchor and a milder null space; SMDC$+$IHDM (here $\gamma{=}0$, the low-noise box
+optimum) leads these three and also the operator-matched DDRM/DDNM baselines in the benchmark
+(Table~\ref{tab:sr}, lower block: $28.78$ vs DDRM $27.98$, DDNM $28.57$).}
+\label{fig:srbox}
 \end{figure}
 
 \paragraph{Scale-matched vs.\ naive data consistency (the title ablation).}
@@ -602,11 +626,10 @@ intermediate state. Table~\ref{tab:dcablation} reports both on the Gaussian-debl
 
 The effect is not a tuning detail but a \textbf{structural collapse}: naive DC falls to
 $\approx\!12$\,dB across all noise levels---a $13$--$15$\,dB drop from scale-matched, and $6$--$11$\,dB
-\emph{below the blurry input itself}. The reason is exact. The reverse state $\x_{t-1}$ is blurred to
-scale $\sigma_{t-1}$ (it is a heat-prior sample at that level), so $\A\x_{t-1}$ is \emph{even blurrier}
-than the observation and cannot equal the sharp $\y$; the per-step MAP therefore chases an infeasible
-target and the iteration diverges, injecting the high-frequency content of a naive deconvolution at
-every one of the $\sim\!200$ steps. Scale-matching is what makes the per-step likelihood
+\emph{below the blurry input itself}. The reason is exact: the reverse state $\x_{t-1}$ is blurred to
+scale $\sigma_{t-1}$, so $\A\x_{t-1}$ is \emph{even blurrier} than the observation and cannot equal
+the sharp $\y$. The per-step MAP then chases an infeasible target and diverges, injecting the
+high-frequency content of a naive deconvolution at every one of the $\sim\!200$ steps. Scale-matching is what makes the per-step likelihood
 \emph{consistent}---$\A\x_{t-1}=\K_{t-1}\y$ is exactly solvable precisely because $\A$ and $\K_{t-1}$
 commute (Eq.~\ref{eq:scalematch})---and it is load-bearing rather than incremental. Tellingly, naive
 DC is no better on the very quantity it optimizes: its measurement consistency MC does not improve
@@ -620,12 +643,11 @@ and never approaches feasibility. Run at $n{=}200$ this best-tuned naive DC reac
 $13.26\pmstd{0.82}$\,dB, still $\approx\!14$\,dB below scale-matched (and with a \emph{worse}
 measurement consistency, $\text{MC}{=}0.45$ vs.\ $0.09$). We therefore report the naive arm with
 the \emph{matched} hyper-parameters (a true one-variable ablation) in Table~\ref{tab:dcablation}; the
-re-tuned figure only confirms the gap survives when the baseline is given its best case---even when
-allowed to tune on the eval set, a deliberately pro-baseline concession. The complementary
-alternative---applying data consistency to a clean-image estimate $\hat\x_0$ rather than to
-$\x_{t-1}$, as DPS and DiffPIR do---is a \emph{different} method, already tabulated as a baseline
-above; it avoids the divergence but forgoes the exact per-step likelihood and the closed-form data
-step that scale-matching buys.
+re-tuned figure only confirms the gap survives even when the baseline is tuned on the eval set. The
+complementary alternative---applying data consistency to a clean-image estimate $\hat\x_0$ rather
+than to $\x_{t-1}$, as DPS and DiffPIR do---is a \emph{different} method, already tabulated above: it
+avoids the divergence but forgoes the exact per-step likelihood and closed-form data step that
+scale-matching buys.
 
 \begin{table}[h]
 \centering
@@ -672,9 +694,9 @@ them on distortion throughout. We therefore do not run a separate hot-prior arm 
 there is none to run---a hot prior forgoes the exact per-step likelihood by construction, and
 Table~\ref{tab:dcablation} shows precisely what happens to a per-step data step once the scale match
 it depends on is removed. A fully controlled swap---the same blurring forward made \emph{hot} by added
-noise (blurring diffusion)---requires retraining the prior and is left to future work; the present
-evidence (structural non-existence of $\mathbf{L}_t$ under VP, together with the measured gap to the
-hot-prior baselines on identical data and operators) already isolates the prior claim.
+noise (blurring diffusion)---requires retraining the prior and is left to future work. The present
+evidence already isolates the prior claim: the structural non-existence of $\mathbf{L}_t$ under VP,
+plus the measured gap to the hot-prior baselines on identical data and operators.
 
 \paragraph{Computational cost.}
 Table~\ref{tab:compute} reports the compute of every method under two lenses: \emph{NFE} (neural
@@ -686,8 +708,8 @@ scale-matched data step is closed-form (a per-frequency division, Eq.~\ref{eq:wi
 CG with no network call, so it adds \textbf{zero NFE}: our runtime is exactly that of an
 unconditional $N{=}200$-step IHDM sampling pass, and the data consistency is free. This is the
 opposite of guidance-based DPS, which spends $1000$ steps \emph{and} backpropagates through the prior
-at every step (two network passes per step); on the identical GPU it costs $95.5$\,s/img,
-$\sim\!3\times$ our $25$--$36$\,s and $5\times$ the NFE, for uniformly lower distortion
+at every step (two network passes per step). On the identical GPU it costs $95.5$\,s/img---$\sim\!3\times$
+our $25$--$36$\,s and $5\times$ the NFE---for uniformly lower distortion
 (Tables~\ref{tab:gauss}--\ref{tab:defocus}). Against the fast SVD methods the trade is qualitative,
 not temporal: DDRM and DDNM diagonalize $\A$ by an SVD that exists \emph{only} for separable
 operators, so they are simply inapplicable to motion and defocus (blank rows above), whereas our
@@ -809,12 +831,12 @@ true $\sigma_y$ & Method & $\times0.5$ & $\times1$ & $\times2$ & $\times4$ \\
  & DDRM & $\mathbf{4.98}^{\dagger}$ & $26.88$ & $26.97$ & $26.46$ \\
 \midrule
 \multirow{2}{*}{$0.10$}
- & IHDM & $24.87$ & \textbf{26.38} & $25.74$ & $22.80$ \\
+ & IHDM & $24.87$ & \textbf{26.60} & $25.94$ & $22.98$ \\
  & DDRM & $\mathbf{4.98}^{\dagger}$ & $26.40$ & $26.39$ & $25.74$ \\
 \midrule
 \multirow{2}{*}{$0.20$}
- & IHDM & $24.38$ & \textbf{25.32} & $22.94$ & $18.32$ \\
- & DDRM & $\mathbf{4.98}^{\dagger}$ & $25.73$ & $25.65$ & $24.77$ \\
+ & IHDM & $24.38$ & $25.47$ & $22.94$ & $18.32$ \\
+ & DDRM & $\mathbf{4.98}^{\dagger}$ & \textbf{25.73} & $25.65$ & $24.77$ \\
 \bottomrule
 \end{tabular}
 
@@ -828,24 +850,21 @@ Table~\ref{tab:regablation} sweeps the reg $\gamma$ (Eq.~\ref{eq:wienerreg}) per
 only \emph{large distortion} gain is \textbf{motion} ($+0.66$\,dB PSNR, $+0.036$ SSIM at
 $\sigma_y{=}0.05$), whose asymmetric reflect operator leaves a genuine weak band the prior fills.
 Elsewhere the reg is at best a near distortion-free \emph{perceptual} clean-up on a flat PSNR
-plateau: \textbf{Gaussian} is flat to $\pm0.01$\,dB across $\gamma\in[0.1,0.5]$ while LPIPS falls
-monotonically ($0.362\!\to\!0.356$, optimum $\gamma\!\approx\!0.4$), and \textbf{low-noise SR} holds
-a flat PSNR plateau ($27.11$\,dB across $\gamma\in[0,0.4]$) with LPIPS falling monotonically
-($0.359\!\to\!0.354$ over $[0,0.4]$, $\to\!0.353$ at $\gamma{=}0.5$) for a $0.00$\,dB cost. It is monotonically \emph{harmful} where the operator is (nearly) full-rank or the measurement
-noise---not speckle---dominates: \textbf{defocus} (every $\gamma>0$ hurts, $-0.01$ to $-0.13$\,dB)
-and \textbf{higher-noise SR} ($-0.18$\,dB at $\sigma_y{=}0.05$); larger $\gamma$ only ever costs on the
-low-noise \emph{aa}-SR plateau. The lone \emph{distortion} exception among the SR rows is
-the \textbf{pure box downsample}: stripping the anti-alias pre-blur leaves a poorer low-pass with a
-real transition band, so at $\sigma_y{=}0.05$ the reg buys a genuine, unimodal $+0.35$\,dB (peak
-$\gamma{=}4$: $27.35\!\to\!27.70$\,dB, LPIPS $0.353\!\to\!0.320$, SSIM $0.772\!\to\!0.795$; it turns
-over only past $\gamma{=}8$)---far more than the anti-alias operator's flat $\gamma$-plateau, and a
-clean confirmation that the reg's payoff tracks how much transition-band noise the operator admits.
-Hence the per-noise operating points (Table~\ref{tab:regablation2}): $\gamma$ \emph{shrinks} with
-noise---$0.25\!\to\!0$ for Gaussian and $0.5\!\to\!0$ for motion (the reg helps only at the lowest
-noise, where motion's near-zero notches inject the most speckle and the full-rank Gaussian is
-speckle-free anyway)---$\gamma{=}0$ for defocus, while for the box-SR operator alone $\gamma$
-\emph{rises} $0\!\to\!4$ as noise grows, because its weak band is a contiguous prior-filled cutoff
-rather than active notches.
+plateau. \textbf{Gaussian} is flat to $\pm0.01$\,dB across $\gamma\in[0.1,0.5]$ while LPIPS falls
+monotonically ($0.362\!\to\!0.356$, optimum $\gamma\!\approx\!0.4$); \textbf{low-noise SR} likewise
+holds a flat plateau ($27.11$\,dB across $\gamma\in[0,0.4]$) with LPIPS improving ($0.359\!\to\!0.353$)
+for a $0.00$\,dB cost. The reg is monotonically \emph{harmful} where the operator is (nearly)
+full-rank or measurement noise---not speckle---dominates: \textbf{defocus} (every $\gamma>0$ hurts,
+$-0.01$ to $-0.13$\,dB) and \textbf{higher-noise SR} ($-0.18$\,dB at $\sigma_y{=}0.05$).
+
+The lone \emph{distortion} exception is the \textbf{pure box downsample}. Stripping the anti-alias
+pre-blur leaves a poorer low-pass with a real transition band, so at $\sigma_y{=}0.05$ the reg buys a
+genuine, unimodal $+0.35$\,dB (peak $\gamma{=}4$: $27.35\!\to\!27.70$\,dB, LPIPS $0.353\!\to\!0.320$,
+SSIM $0.772\!\to\!0.795$; it turns over past $\gamma{=}8$). The reg's payoff thus tracks how much
+transition-band noise the operator admits. Hence the per-noise operating points
+(Table~\ref{tab:regablation2}): $\gamma$ \emph{shrinks} with noise for Gaussian ($0.25\!\to\!0$) and
+motion ($0.5\!\to\!0$), stays $0$ for defocus, and \emph{rises} ($0\!\to\!4$) for box-SR alone---whose
+weak band is a contiguous prior-filled cutoff rather than the active notches of motion.
 
 \begin{table}[h]
 \centering
@@ -926,7 +945,7 @@ Operator & $\sigma_y$ & $\gamma{=}0$ & $0.25$ & $0.5$ & $1$ & $2$ & $\gamma^\ast
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_speckle.png}
+\figimg{figures/figure_speckle.png}
 \caption{The frequency-aware reg, visualized ($\times4$ anti-alias SR, $\sigma_y{=}0.01$). Per image,
 left to right: clean, SMDC with $\gamma{=}0$ (plain data step) with a flat-patch zoom, then SMDC with
 $\gamma{=}4$ and its zoom. The plain data step amplifies the measurement noise into transition-band
@@ -947,7 +966,39 @@ measurement depends on the unobserved pixels. We approximate the missing compani
 step: at level $t$ we composite the observed data with the current hole estimate, blur the composite to
 level $t$, and pin the observed region to it, so the injected data lives at the state's own scale
 rather than as sharp values in a blurry field. A few RePaint-style resampling passes per level
-($U{=}5$) then let the observed data propagate into the holes.
+($U{=}5$) then let the observed data propagate into the holes. Algorithm~\ref{alg:inpaint} gives the
+full loop; note it differs structurally from Algorithm~\ref{alg:hqs}---there is no closed-form MAP
+data step (a mask admits no companion $\mathbf L_t$), only the re-blur pin plus the inner resampling
+loop that Algorithm~\ref{alg:hqs} does not have.
+
+\begin{algorithm}[h]
+\caption{Inpainting via the re-blur companion with RePaint resampling}
+\label{alg:inpaint}
+\begin{algorithmic}[1]
+\Require masked measurement $\y$ (holes zeroed); mask $\mathbf M$ ($1$=observed, $0$=hole); prior
+reverse step $R_\theta$; heat blur $\K_t$ and symbols $\hat k_t$ in basis $\Phimat$; levels $N$;
+resampling passes $U$
+\State $\bar y \gets (\mathbf 1^{\!\top}\y)\,/\,(\mathbf 1^{\!\top}\mathbf M)$
+\Comment{mean of the observed pixels}
+\State $\x \gets \mathrm{clip}\big(\K_N\!\big(\y + (\mathbf 1-\mathbf M)\,\bar y\big)\big)$
+\Comment{fill holes, blur to the top level}
+\For{$t = N, N\!-\!1, \dots, 1$}
+  \For{$u = 1, \dots, U$}
+    \State $\bmu \gets R_\theta(\x,\,t)$
+    \Comment{prior deblurs one level, $t\!\to\!t\!-\!1$}
+    \State $\mathbf c \gets \y + (\mathbf 1-\mathbf M)\odot\bmu$
+    \Comment{composite: observed data $+$ current hole estimate}
+    \State $\x \gets \mathrm{clip}\big(\mathbf M\odot\K_{t-1}\mathbf c \;+\; (\mathbf 1-\mathbf M)\odot\bmu\big)$
+    \Comment{re-blur companion: pin the observed region at level $t\!-\!1$}
+    \If{$u < U$}
+      \State $\x \gets \mathrm{clip}\big(\Phimat^{-1}\big[(\hat k_t/\hat k_{t-1})\odot\Phimat\x\big]\big)$
+      \Comment{re-blur up to level $t$ and resample}
+    \EndIf
+  \EndFor
+\EndFor
+\State \Return $\x$
+\end{algorithmic}
+\end{algorithm}
 
 The outcome (Table~\ref{tab:inpaint}) is sharply regime-dependent. On \emph{random} masks the method is
 strong and robust across densities: at $50\%$ missing it reaches $29.9$\,dB hole-PSNR / LPIPS $0.030$
@@ -986,7 +1037,7 @@ box $37.5\%$ (contig.) & IHDM & $19.25$\pmstd{2.77} & $10.73$\pmstd{2.77} & $0.8
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_inpaint.png}
+\figimg{figures/figure_inpaint.png}
 \caption{Inpainting on a fixed $50\%$-keep random mask, held-out CelebA-HQ-256: clean, masked input,
 SMDC$+$IHDM (re-blur companion with $U{=}5$ resampling), and DDRM on the \emph{same} mask.
 SMDC$+$IHDM recovers the missing region more faithfully (missing-region PSNR $29.97$ vs $27.70$\,dB;
@@ -1072,14 +1123,14 @@ is not diagonalized by any fast transform, so a closed-form frequency-domain (iF
 re-imposes periodic boundaries and rings; we instead solve the same per-step MAP objective with a
 spatial \textbf{conjugate-gradient} data step (the true reflect operator $\mathbf H$,
 Eq.~\ref{eq:cg}), which eliminates the border ring and makes IHDM$+$CG the best full-frame method
-at every noise level (Table~\ref{tab:motion}). Two caveats keep the
-picture honest: (i) \textbf{TV is a very strong classical prior}: given the \emph{same} data step
-as the learned prior---the closed-form DCT solve on Gaussian, the spatial-CG solve on motion---a TV
-regularizer comes within $\sim\!1$--$1.8$\,dB of the learned prior on both the Gaussian and motion
-full frames, so the gain over a well-tuned classical prox is real but modest; and
-(ii) \textbf{DPS} is the most
-robust choice when the operator's structure is unknown or perceptual LPIPS is the target,
-since it never diagonalizes $\A$ and only needs $\A,\A^\top$. The learned diffusion prior
-wins where its structural assumptions hold; TV and DPS are the baselines to beat elsewhere.
+at every noise level (Table~\ref{tab:motion}).
+
+Two caveats keep the picture honest. (i) \textbf{TV is a strong classical prior}: given the
+\emph{same} data step as the learned prior (the closed-form DCT solve on Gaussian, the spatial-CG
+solve on motion), a TV regularizer comes within $\sim\!1$--$1.8$\,dB on both full frames, so the gain
+over a well-tuned classical prox is real but modest. (ii) \textbf{DPS} is the most robust choice when
+the operator structure is unknown or perceptual LPIPS is the target, since it never diagonalizes
+$\A$ and needs only $\A,\A^\top$. The learned diffusion prior wins where its structural assumptions
+hold; TV and DPS are the baselines to beat elsewhere.
 
 \end{document}

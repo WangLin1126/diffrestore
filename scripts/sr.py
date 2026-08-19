@@ -137,7 +137,8 @@ def _run_dps(cleans, obs_lr, scale, dev, args, out_dir):
     mc["model_path"] = str(DPS_ROOT / "models" / "ffhq_10m.pt")
     H = int(mc["image_size"])
     model = create_model(**mc).to(dev).eval()
-    A = SuperResolution(scale, H, channels=3, device=dev, dtype=torch.float32)   # SAME operator
+    A = SuperResolution(scale, H, channels=3, aa_sigma=args.aa_sigma, decimation=args.decimation,
+                        device=dev, dtype=torch.float32)   # SAME operator as demo (box if aa_sigma=0)
 
     class Operator:                                                              # DPS forward/transpose API
         __name__ = "sr"
@@ -145,20 +146,30 @@ def _run_dps(cleans, obs_lr, scale, dev, args, out_dir):
         def transpose(self, data, **kw): return A.adjoint(data)
     class GaussianNoiser: __name__ = "gaussian"
 
-    cond = get_conditioning_method("ps", Operator(), GaussianNoiser(), scale=args.dps_scale)
     sampler = create_sampler(**yaml.safe_load(open(str(DPS_ROOT / "configs/diffusion_config.yaml"))))
+    method = getattr(args, "dps_method", "ps")
+    if method == "pigdm":                                     # PiGDM (validated: sqrt_abar precond)
+        cond = get_conditioning_method("pigdm", Operator(), GaussianNoiser(), scale=args.pigdm_scale,
+                                       sigma_y=args.pigdm_sigma, tfactor="sqrt_abar",
+                                       alphas_cumprod=sampler.alphas_cumprod)
+        tag, sub = f"PiGDM scale={args.pigdm_scale} sig={args.pigdm_sigma}", "pigdm_recon"
+    else:
+        cond = get_conditioning_method("ps", Operator(), GaussianNoiser(), scale=args.dps_scale)
+        tag, sub = f"DPS scale={args.dps_scale}", "dps_recon"
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=cond.conditioning)
 
-    rec_dir = os.path.join(out_dir, "dps_recon"); os.makedirs(rec_dir, exist_ok=True)
+    rec_dir = os.path.join(out_dir, sub); os.makedirs(rec_dir, exist_ok=True)
     S = P.new_scores("out", "ssim", "lpips")
     for i, (x0, y) in enumerate(zip(cleans, obs_lr)):
+        if method == "pigdm":
+            cond.reset()                                      # per-image reverse-step counter
         x_start = torch.randn(1, 3, H, H, device=dev).requires_grad_()
         rec = sample_fn(x_start=x_start, measurement=y, record=False, save_root=str(rec_dir))
         rec = rec.detach().clamp(-1, 1)
         P.save_img(os.path.join(rec_dir, f"{i:05d}.png"), rec)
         P.add_scores(S, rec, x0, dev)
-        print(f"  DPS img {i}: {S['out'][-1]:.2f} dB  SSIM {S['ssim'][-1]:.3f}", flush=True)
-    _report(f"DPS scale={args.dps_scale}", S, rec_dir)
+        print(f"  {method} img {i}: {S['out'][-1]:.2f} dB  SSIM {S['ssim'][-1]:.3f}", flush=True)
+    _report(tag, S, rec_dir)
 
 
 def cmd_baselines(args):
@@ -171,11 +182,14 @@ def cmd_baselines(args):
     print(f"SR baselines: n={len(cleans)} scale={s} obs={tuple(obs_lr[0].shape[-2:])} "
           f"methods={args.methods}", flush=True)
 
-    A = SuperResolution(s, H, channels=3, device=dev, dtype=torch.float32)
+    A = SuperResolution(s, H, channels=3, aa_sigma=args.aa_sigma, decimation=args.decimation,
+                        device=dev, dtype=torch.float32)
     if "tv" in args.methods:
         _run_tv(cleans, obs_lr, A, H, dev, args, args.out)
-    if "dps" in args.methods:
-        _run_dps(cleans, obs_lr, s, dev, args, args.out)
+    for m in ("dps", "pigdm"):                               # both go through the DPS sampler
+        if m in args.methods:
+            args.dps_method = m
+            _run_dps(cleans, obs_lr, s, dev, args, args.out)
 
 
 # --------------------------------------------------------------------------- freqreg sweep
@@ -299,8 +313,8 @@ def main():
     pd.set_defaults(func=cmd_demo)
 
     pb = sub.add_parser("baselines", help="TV+CG and DPS on the same operator + observations")
-    _add_common(pb)
-    pb.add_argument("--methods", nargs="+", default=["tv", "dps"], choices=["tv", "dps"])
+    _add_common(pb); _add_sr_operator(pb)                       # --aa_sigma (0 = pure box), --decimation
+    pb.add_argument("--methods", nargs="+", default=["tv", "dps"], choices=["tv", "dps", "pigdm"])
     pb.add_argument("--in_dir", default="results/sr_demo", help="has clean/ and observation/ from demo")
     pb.add_argument("--out", default="results/sr_demo")
     pb.add_argument("--image_size", type=int, default=256)
@@ -311,6 +325,8 @@ def main():
     pb.add_argument("--T", type=int, default=40)
     pb.add_argument("--cg_iters", type=int, default=12)
     pb.add_argument("--dps_scale", type=float, default=0.3)     # DPS knob
+    pb.add_argument("--pigdm_scale", type=float, default=1.0)   # PiGDM knobs (validated: sig=0.2, scale=1.0)
+    pb.add_argument("--pigdm_sigma", type=float, default=0.2)
     pb.set_defaults(func=cmd_baselines)
 
     pf = sub.add_parser("freqreg", help="frequency-aware data-regularization sweep over (sigma_y, gamma)")

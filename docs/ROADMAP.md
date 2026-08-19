@@ -41,6 +41,21 @@ being re-run at `n=200` (A1-1); still to run on ImageNet (A1-2).
    everywhere) and **DDNM** (box-SR; NaN on our strong-Gaussian, DDRM covers that slot), both on the
    shared `ffhq_10m` prior, our metrics. **Remaining:** **ΠGDM** (closest to our closed-form Wiener
    DC); RED-diff optional. Then re-run the whole table at 1k / ImageNet (A1-1/2). DDRM/DPS = floor.
+   **ΠGDM WORKING + wired (2026-08-17).** `pigdm` conditioning method in
+   `model/dps_backbone/guided_diffusion/condition_methods.py`: scalar `1/(r^2+sigma^2)` precond
+   (r_t^2=(1-abar)/abar tracked internally, `reset()` per image) **weighted by `sqrt(abar_t)`** — that
+   time factor is the fix (bare VJP explodes as t→0; a `*r_t^2` factor stalls at bicubic). **Operating
+   point (SR x4 anti-alias, sigma_y=0.01, n=4): tfactor=sqrt_abar, sigma_y=0.2 (a guidance temperature,
+   not literal noise), scale=1.0 → 25.85 dB** — beats DPS ~22, below DDRM/DiffPIR ~26 (where ΠGDM
+   should sit); larger sigma_y = more stable/wider scale window. Wired into `sr.py baselines --methods
+   pigdm --pigdm_scale --pigdm_sigma` (DPS 1000-step sampler). **✅ FULL RUN DONE + IN `tab:sr`
+   (2026-08-18, n=100 like DPS).** Needs **per-cell** guidance tuning — a single operating point gave
+   sub-bicubic s05. Tuned (tfactor=sqrt_abar): aa_s01 σ0.2/sc1.0→25.59; aa_s05 σ1.0/sc1.0→24.34; box_s01
+   σ0.5/sc0.5→27.81; box_s05 σ1.0/sc0.3→27.11. Pattern: **higher noise → softer guidance (larger σ,
+   smaller scale); box >> anti-alias** (orthonormal-rows AAᵀ≈I approx closer to true on avg-pool).
+   **Trails on PSNR/SSIM but takes best LPIPS in 3/4 cells** (aa_s05/box_s01/box_s05). Recons in
+   `results200/<cell>/pigdm/recon`; runners `scratchpad/pigdm_{sr_eval,tune}.py`. **Remaining:** re-run at
+   n=200/ImageNet with the same per-cell tuning when the main table is re-run (A1-2).
 
 ## A2 — Strongly expected (borderline → clear accept)
 
@@ -130,7 +145,9 @@ being re-run at `n=200` (A1-1); still to run on ImageNet (A1-2).
     the box payoff is an n=200 statistical effect only, so anti-alias is the honest demo.) Transfer-profile figure kept
     (`transfer_profiles.{png,pdf}`). Only gaussian/motion are `\includegraphics`'d so far; defocus +
     speckle are prepared but not yet inserted (awaiting go-ahead).
-11. Keep the existing **freq-aware γ ablation** (`tab:regablation`, `tab:regablation2`).
+11. ✅ **DONE (2026-08-19) — freq-aware γ ablation retained.** Both tables present and integrated in
+    the report (`tab:regablation`, `tab:regablation2`, at n=50), cross-referenced from setup / SR /
+    results / summary; γ* trend (Gaussian & anti-alias shrink with noise, box-SR rises) documented.
 
 ## Execution discipline (carry into every re-run — a broken baseline makes our win look fake)
 
