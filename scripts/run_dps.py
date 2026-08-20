@@ -66,6 +66,35 @@ class MotionBlurOperatorDPS:
         return self.A.adjoint(data)
 
 
+class InpaintOperatorDPS:
+    """Inpainting: elementwise multiply by a shared 0/1 mask (1=observed). Self-adjoint projection;
+    differentiable, so autograd gives the (identical) adjoint. Mask loaded from a .pt file."""
+    def __init__(self, mask_file, device):
+        self.m = torch.load(mask_file, map_location=device).float()
+
+    def forward(self, data, **kwargs):
+        return data * self.m
+
+    def transpose(self, data, **kwargs):
+        return data * self.m
+
+
+class ReflectBlurOperatorDPS:
+    """Reflect-boundary blur (motion Levin09 or disk defocus) matching the observation synthesis
+    exactly (scipy convolve2d mode='same' boundary='symm'); differentiable forward -> autograd adjoint.
+    Same operator our SMDC spatial-CG data step uses, so DPS/PiGDM solve the true reflect problem."""
+    def __init__(self, kernel_npy, device):
+        from ops.motion_spatial import SpatialMotionBlur
+        k = torch.from_numpy(np.load(kernel_npy))
+        self.A = SpatialMotionBlur(k, channels=3, device=device, dtype=torch.float32)
+
+    def forward(self, data, **kwargs):
+        return self.A.forward(data)
+
+    def transpose(self, data, **kwargs):
+        return self.A.adjoint(data)
+
+
 class GaussianNoiser:
     __name__ = "gaussian"
 
@@ -91,9 +120,15 @@ def main():
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--num_images", type=int, default=8)
     ap.add_argument("--degradation_sigma", type=float, default=4.0)
-    ap.add_argument("--operator", choices=["heat", "motion"], default="heat")
+    ap.add_argument("--operator", choices=["heat", "motion", "inpaint"], default="heat")
+    ap.add_argument("--mask_file", default=None, help="shared 0/1 inpaint mask (.pt) for --operator inpaint")
+    ap.add_argument("--boundary", choices=["circular", "reflect"], default="circular",
+                    help="motion/defocus forward boundary: circular OTF (stock) or reflect (matches obs)")
     ap.add_argument("--kernel_npy", default="results/motion/kernel.npy")
     ap.add_argument("--scale", type=float, default=0.3)
+    ap.add_argument("--method", choices=["ps", "pigdm"], default="ps",
+                    help="ps = DPS posterior-gradient; pigdm = pseudoinverse-guided (same sampler/operator)")
+    ap.add_argument("--pigdm_sigma", type=float, default=0.2, help="PiGDM guidance temperature")
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
 
@@ -103,10 +138,20 @@ def main():
     mc["model_path"] = str(DPS_ROOT / "models" / "ffhq_10m.pt")   # symlink -> checkpoint/dps
     image_size = int(mc["image_size"])
     model = create_model(**mc).to(device).eval()
-    operator = (MotionBlurOperatorDPS(args.kernel_npy, image_size, device) if args.operator == "motion"
-                else HeatBlurOperator(args.degradation_sigma))
-    cond = get_conditioning_method("ps", operator, GaussianNoiser(), scale=args.scale)
+    if args.operator == "inpaint":
+        operator = InpaintOperatorDPS(args.mask_file, device)
+    elif args.operator == "motion":
+        operator = (ReflectBlurOperatorDPS(args.kernel_npy, device) if args.boundary == "reflect"
+                    else MotionBlurOperatorDPS(args.kernel_npy, image_size, device))
+    else:
+        operator = HeatBlurOperator(args.degradation_sigma)
     sampler = create_sampler(**yaml.safe_load(open(args.diffusion_config)))
+    if args.method == "pigdm":                       # pseudoinverse-guided; same sampler+operator as DPS
+        cond = get_conditioning_method("pigdm", operator, GaussianNoiser(), scale=args.scale,
+                                       sigma_y=args.pigdm_sigma, tfactor="sqrt_abar",
+                                       alphas_cumprod=sampler.alphas_cumprod)
+    else:
+        cond = get_conditioning_method("ps", operator, GaussianNoiser(), scale=args.scale)
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=cond.conditioning)
 
     out = Path(args.save_dir) / "heat_blur"
@@ -115,6 +160,8 @@ def main():
     cleans = sorted(Path(args.clean_dir).glob("*.png"))[:args.num_images]
     obs = sorted(Path(args.observation_dir).glob("*.png"))[:args.num_images]
     for i, (c, o) in enumerate(zip(cleans, obs)):
+        if args.method == "pigdm":
+            cond.reset()                             # PiGDM tracks reverse-step index internally
         clean = _to_model_range(c, image_size, device)
         meas = _to_model_range(o, image_size, device)
         x_start = torch.randn(clean.shape, device=device).requires_grad_()

@@ -58,9 +58,11 @@ def cmd_demo(args):
     for idx, p in enumerate(paths):
         x0 = P.load_png(p, H, dev)
         with torch.no_grad():
+            torch.manual_seed(args.seed + idx)                 # per-image noise draw (matches freqreg)
             y = A.forward(x0)
             if args.sigma_y > 0:
-                y = y + args.sigma_y * y.abs().mean() * torch.randn_like(y)
+                nz = (args.sigma_y / lam) if getattr(args, "abs_noise", False) else (args.sigma_y * y.abs().mean())
+                y = y + nz * torch.randn_like(y)               # --abs_noise: absolute std on physical LR (SMDC/DDRM conv.)
             # bicubic baseline / LR panel from the *physical* LR (A is DC-preserving; y*lam undoes
             # the ||A||=1 rescaling so intensities match x0). SMDC loop keeps the normalized y.
             bic = F.interpolate(y * lam, size=(H, H), mode="bicubic", align_corners=False)
@@ -310,6 +312,8 @@ def main():
                          "in Table tab:sr, e.g. 0.5 for the anti-alias operator at sigma_y=0.01)")
     pd.add_argument("--out", default="results/sr_demo")
     pd.add_argument("--seed", type=int, default=0, help="fixes the LR noise so baselines share the obs")
+    pd.add_argument("--abs_noise", action="store_true",
+                    help="absolute Gaussian std on the physical LR (SMDC/DDRM convention, matches freqreg)")
     pd.set_defaults(func=cmd_demo)
 
     pb = sub.add_parser("baselines", help="TV+CG and DPS on the same operator + observations")

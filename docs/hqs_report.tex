@@ -285,10 +285,12 @@ $\mathcal{O}(d\log d)$ and exact. The method never differentiates the prior.
 \paragraph{Setup.}
 Held-out CelebA-HQ-256, $n=200$ images (the first 200 of the standard validation split); every method
 reconstructs the \emph{identical} set from the same observations, with noise $\sigma_y\in\{0.05,0.10,0.20\}$
-(SR: $\{0.01,0.05\}$). Because DPS is a $\sim$1000-NFE sampler, it is evaluated on the first 100 of these
-200 (a strict subset). Priors: \emph{COLD-DIFF} and \emph{IHDM-211M}. Baselines:
-Diffusion Posterior Sampling (DPS), DDRM (separable operators only), DiffPIR (NFE${=}100$,
-FFT data consistency), and DDNM (super-res). Metrics:
+(SR: $\{0.01,0.05\}$). Because DPS and $\Pi$GDM are $\sim$1000-NFE samplers, they are evaluated on the
+first 100 of these 200 (a strict subset). Priors: \emph{COLD-DIFF} and \emph{IHDM-211M}. Baselines:
+Diffusion Posterior Sampling (DPS), $\Pi$GDM (pseudoinverse-guided), DDRM (separable operators only),
+DiffPIR (NFE${=}100$, FFT data consistency), and DDNM (super-res). DPS and $\Pi$GDM use the
+\emph{same} reflect-boundary operators as SMDC on motion/defocus, so they solve the true reflect
+problem with no boundary ring (Appendix~\ref{app:boundary}). Metrics:
 PSNR$\uparrow$ (reported as mean$\pm$std), SSIM$\uparrow$, LPIPS$\downarrow$, measurement consistency
 $\mathrm{MC}=\|\y-\A\hat\x\|/\|\y\|\;\downarrow$.
 
@@ -309,22 +311,27 @@ dropped as noise grows (Table~\ref{tab:regablation2}).
 DDRM inverts the \emph{same} separable Gaussian via its SVD replacement; DiffPIR (NFE${=}100$, same
 FFHQ prior) shares our per-step MAP form but uses FFT (circular-boundary) data consistency. Both use
 the $\sigma_0{=}\sigma_y/2$ noise convention (noise defined on $[0,1]$, doubled to $[-1,1]$) and omit
-MC, since they use their own range-space forward. Bold = best PSNR/SSIM/LPIPS per noise block.}
+MC, since they use their own range-space forward. $\Pi$GDM (pseudoinverse-guided, first 100) uses the
+DCT operator (matched, so MC is reported); DDNM's separable-Gaussian SVD is numerically unstable for
+the strong $\sigma{=}4$ kernel (NaN, App.~\ref{app:boundary}), so its cell is empty. Bold = best
+PSNR/SSIM/LPIPS per noise block.}
 \label{tab:gauss}
 \begin{tabular}{llcccc}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{7}{*}{0.05}
+\multirow{9}{*}{0.05}
  & Observation & 23.11\pmstd{1.61} & 0.523 & 0.565 & 0.116 \\
  & TV          & 26.16\pmstd{2.09} & 0.732 & 0.367 & 0.091 \\
  & cold + HQS  & 25.92\pmstd{1.81} & 0.684 & 0.437 & 0.091 \\
  & IHDM + HQS ($\gamma{=}0.25$) & \textbf{27.30}\pmstd{2.37} & \textbf{0.771} & 0.347 & 0.091 \\
  & DPS         & 24.12\pmstd{1.98} & 0.669 & 0.175 & 0.102 \\
  & DDRM        & 26.88\pmstd{2.27} & 0.768 & 0.227 & -- \\
- & DiffPIR     & 26.28\pmstd{2.14} & 0.732 & \textbf{0.162} & -- \\
+ & DiffPIR     & 26.28\pmstd{2.14} & 0.732 & 0.162 & -- \\
+ & PiGDM       & 25.67\pmstd{2.14} & 0.708 & \textbf{0.160} & 0.093 \\
+ & DDNM        & \multicolumn{4}{c}{-- \; (SVD unstable: NaN for $\sigma{=}4$; see App.~\ref{app:boundary})} \\
 \midrule
-\multirow{7}{*}{0.10}
+\multirow{9}{*}{0.10}
  & Observation & 21.70\pmstd{1.18} & 0.344 & 0.726 & 0.192 \\
  & TV          & 25.33\pmstd{1.98} & 0.702 & 0.411 & 0.179 \\
  & cold + HQS  & 25.25\pmstd{1.74} & 0.674 & 0.455 & 0.178 \\
@@ -332,8 +339,10 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & DPS         & 23.59\pmstd{1.88} & 0.648 & 0.187 & 0.191 \\
  & DDRM        & 26.40\pmstd{2.17} & \textbf{0.754} & 0.235 & -- \\
  & DiffPIR     & 25.65\pmstd{2.02} & 0.714 & \textbf{0.176} & -- \\
+ & PiGDM       & 24.98\pmstd{1.91} & 0.665 & 0.209 & 0.182 \\
+ & DDNM        & \multicolumn{4}{c}{-- \; (SVD unstable: NaN for $\sigma{=}4$; see App.~\ref{app:boundary})} \\
 \midrule
-\multirow{7}{*}{0.20}
+\multirow{9}{*}{0.20}
  & Observation & 18.68\pmstd{0.63} & 0.180 & 0.937 & 0.342 \\
  & TV          & 23.60\pmstd{1.73} & 0.648 & 0.482 & 0.341 \\
  & cold + HQS  & 24.09\pmstd{1.61} & 0.653 & 0.467 & 0.335 \\
@@ -341,6 +350,8 @@ $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
  & DPS         & 22.87\pmstd{1.73} & 0.621 & 0.203 & 0.351 \\
  & DDRM        & \textbf{25.73}\pmstd{2.06} & \textbf{0.737} & 0.245 & -- \\
  & DiffPIR     & 24.91\pmstd{1.92} & 0.692 & \textbf{0.187} & -- \\
+ & PiGDM       & 23.42\pmstd{1.43} & 0.575 & 0.338 & 0.341 \\
+ & DDNM        & \multicolumn{4}{c}{-- \; (SVD unstable: NaN for $\sigma{=}4$; see App.~\ref{app:boundary})} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -363,14 +374,17 @@ by CG. No iFFT over the image is formed, so there is no periodic wrap and no rin
 the cost is negligible next to the network evaluation. Table~\ref{tab:motion} reports every method
 on identical reflect-boundary observations. To isolate the prior, the TV baseline uses the
 \emph{same} spatial-CG data step as the learned priors so IHDM$+$CG, cold$+$CG and TV all recover
-the full frame without ringing; only DPS, whose guidance uses a circular forward, inherits the boundary ring.
+the full frame without ringing. The guidance baselines DPS and $\Pi$GDM now use the same reflect
+operator (matched to the observation), so they too avoid the ring; only DiffPIR, whose FFT solver is
+inherently circular, inherits it.
 
 \begin{table}[h]
 \centering
 \caption{Motion deblur (Levin09~\#1) on realistic \textbf{reflect-boundary} observations, full
-frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS: first 100); PSNR as mean$\pm$std. IHDM, cold and TV all use
-the spatial-CG data step (Eq.~\ref{eq:cg}); DPS is a circulant baseline that inherits the
-boundary ring. IHDM uses its best per-noise reg ($\gamma{=}0.5$ at $\sigma_y{=}0.05$, $\gamma{=}0$ at
+frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS, $\Pi$GDM: first 100); PSNR as mean$\pm$std. IHDM, cold and TV all use
+the spatial-CG data step (Eq.~\ref{eq:cg}); DPS and $\Pi$GDM use the \emph{same} reflect operator
+(matched, no boundary ring), $\Pi$GDM at its stable guidance point (scale $0.02$, temperature $1.0$).
+IHDM uses its best per-noise reg ($\gamma{=}0.5$ at $\sigma_y{=}0.05$, $\gamma{=}0$ at
 $0.10/0.20$): the notch speckle the reg suppresses is strongest at low noise, so unlike SR the
 optimal $\gamma$ \emph{falls} as noise grows (Table~\ref{tab:regablation2}). DiffPIR (NFE${=}100$,
 same FFHQ prior, exact Levin09~\#1 kernel) is FFT-based, so unlike DDRM it \emph{does} apply to this
@@ -381,32 +395,35 @@ omitted). Bold = best PSNR/SSIM, and best LPIPS, per noise block.}
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{7}{*}{0.05}
+\multirow{8}{*}{0.05}
  & Observation & 24.41\pmstd{1.68} & 0.572 & 0.358 & 0.113 \\
  & TV          & 28.41\pmstd{1.95} & 0.792 & 0.159 & 0.084 \\
  & cold + CG   & 22.64\pmstd{0.48} & 0.433 & 0.506 & 0.060 \\
  & IHDM + CG ($\gamma{=}0.5$) & \textbf{30.59}\pmstd{2.17} & \textbf{0.843} & 0.122 & 0.083 \\
- & DPS         & 25.16\pmstd{2.01} & 0.709 & 0.169 & 0.120 \\
+ & DPS         & 25.83\pmstd{2.12} & 0.726 & 0.162 & 0.108 \\
  & DDRM        & \multicolumn{4}{c}{-- \; (non-separable kernel; see text)} \\
  & DiffPIR     & 29.03\pmstd{1.77} & 0.777 & \textbf{0.078} & -- \\
+ & PiGDM       & 25.70\pmstd{2.06} & 0.728 & 0.188 & 0.106 \\
 \midrule
-\multirow{7}{*}{0.10}
+\multirow{8}{*}{0.10}
  & Observation & 22.62\pmstd{1.15} & 0.386 & 0.543 & 0.188 \\
  & TV          & 26.70\pmstd{1.96} & 0.739 & 0.248 & 0.172 \\
  & cold + CG   & 22.04\pmstd{0.55} & 0.390 & 0.558 & 0.140 \\
  & IHDM + CG ($\gamma{=}0$) & \textbf{28.54}\pmstd{2.16} & \textbf{0.788} & 0.241 & 0.169 \\
- & DPS         & 24.70\pmstd{1.91} & 0.690 & 0.176 & 0.198 \\
+ & DPS         & 25.08\pmstd{1.97} & 0.698 & 0.172 & 0.192 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
  & DiffPIR     & 27.66\pmstd{1.93} & 0.750 & \textbf{0.104} & -- \\
+ & PiGDM       & 25.65\pmstd{2.05} & 0.720 & 0.187 & 0.186 \\
 \midrule
-\multirow{7}{*}{0.20}
+\multirow{8}{*}{0.20}
  & Observation & 19.15\pmstd{0.58} & 0.208 & 0.803 & 0.336 \\
  & TV          & 25.05\pmstd{1.79} & 0.686 & 0.338 & 0.329 \\
  & cold + CG   & 22.00\pmstd{0.92} & 0.407 & 0.514 & 0.298 \\
  & IHDM + CG ($\gamma{=}0$) & \textbf{26.83}\pmstd{2.08} & \textbf{0.748} & 0.324 & 0.325 \\
- & DPS         & 23.91\pmstd{1.78} & 0.659 & 0.191 & 0.349 \\
+ & DPS         & 24.10\pmstd{1.80} & 0.662 & 0.189 & 0.347 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
  & DiffPIR     & 26.37\pmstd{1.95} & 0.726 & \textbf{0.138} & -- \\
+ & PiGDM       & 25.37\pmstd{1.97} & 0.703 & 0.184 & 0.337 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -454,9 +471,9 @@ $0.01$\,dB, as it must.
 \begin{table}[h]
 \centering
 \caption{Defocus deblur (disk PSF, radius $7$ / $15\times15$) on realistic \textbf{reflect-boundary}
-observations, full frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS: first 100); PSNR as mean$\pm$std. The disk
+observations, full frame ($256^2$), across noise $\sigma_y$, held-out CelebA-HQ-256, $n=200$ (DPS, $\Pi$GDM: first 100); PSNR as mean$\pm$std. The disk
 is DCT-diagonal, so IHDM, cold and TV all use the closed-form DCT-HQS data step~\eqref{eq:wiener}
-(no CG); DPS is a circulant baseline. DiffPIR (NFE${=}100$, same FFHQ prior, exact disk PSF) is
+(no CG); DPS and $\Pi$GDM use the same reflect operator (matched). DiffPIR (NFE${=}100$, same FFHQ prior, exact disk PSF) is
 FFT-based, so unlike DDRM it \emph{does} apply to this non-separable PSF; circular-boundary data
 consistency, $\sigma_0{=}\sigma_y/2$ (MC omitted). Bold = best PSNR and best LPIPS per noise block.}
 \label{tab:defocus}
@@ -464,32 +481,35 @@ consistency, $\sigma_0{=}\sigma_y/2$ (MC omitted). Bold = best PSNR and best LPI
 \toprule
 $\sigma_y$ & Method & PSNR & SSIM & LPIPS & MC \\
 \midrule
-\multirow{7}{*}{0.05}
+\multirow{8}{*}{0.05}
  & Observation & 23.04\pmstd{1.62} & 0.513 & 0.551 & 0.113 \\
  & TV          & 26.25\pmstd{2.06} & 0.733 & 0.332 & 0.091 \\
  & cold + HQS  & 24.17\pmstd{1.05} & 0.502 & 0.493 & 0.087 \\
  & IHDM + HQS ($\gamma{=}0$) & \textbf{27.97}\pmstd{2.37} & \textbf{0.788} & 0.307 & 0.090 \\
- & DPS         & 23.57\pmstd{1.91} & 0.653 & 0.184 & 0.115 \\
+ & DPS         & 24.26\pmstd{2.00} & 0.674 & 0.173 & 0.102 \\
  & DDRM        & \multicolumn{4}{c}{-- \; (non-separable disk PSF; see text)} \\
  & DiffPIR     & 27.04\pmstd{2.12} & 0.749 & \textbf{0.140} & -- \\
+ & PiGDM       & 26.56\pmstd{2.08} & 0.725 & 0.158 & 0.092 \\
 \midrule
-\multirow{7}{*}{0.10}
+\multirow{8}{*}{0.10}
  & Observation & 21.65\pmstd{1.20} & 0.338 & 0.714 & 0.190 \\
  & TV          & 25.26\pmstd{1.96} & 0.699 & 0.396 & 0.178 \\
  & cold + HQS  & 24.63\pmstd{1.40} & 0.570 & 0.445 & 0.174 \\
  & IHDM + HQS ($\gamma{=}0$) & \textbf{26.79}\pmstd{2.25} & \textbf{0.750} & 0.364 & 0.177 \\
- & DPS         & 23.29\pmstd{1.83} & 0.642 & 0.191 & 0.197 \\
+ & DPS         & 23.72\pmstd{1.90} & 0.653 & 0.185 & 0.190 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
  & DiffPIR     & 26.01\pmstd{2.03} & 0.721 & \textbf{0.162} & -- \\
+ & PiGDM       & 25.23\pmstd{1.75} & 0.653 & 0.221 & 0.180 \\
 \midrule
-\multirow{7}{*}{0.20}
+\multirow{8}{*}{0.20}
  & Observation & 18.66\pmstd{0.64} & 0.177 & 0.927 & 0.340 \\
  & TV          & 24.04\pmstd{1.79} & 0.658 & 0.454 & 0.337 \\
  & cold + HQS  & 24.10\pmstd{1.56} & 0.621 & 0.419 & 0.331 \\
  & IHDM + HQS ($\gamma{=}0$) & \textbf{25.57}\pmstd{2.07} & \textbf{0.711} & 0.391 & 0.334 \\
- & DPS         & 22.77\pmstd{1.71} & 0.620 & 0.204 & 0.352 \\
+ & DPS         & 23.01\pmstd{1.75} & 0.625 & 0.201 & 0.349 \\
  & DDRM        & \multicolumn{4}{c}{--} \\
  & DiffPIR     & 25.02\pmstd{1.93} & 0.694 & \textbf{0.182} & -- \\
+ & PiGDM       & 22.91\pmstd{1.22} & 0.520 & 0.385 & 0.337 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -547,43 +567,49 @@ task. SMDC uses its best per-cell reg (anti-alias: $\gamma{=}0.5/0$ at $\sigma_y
 $\gamma{=}0/4$). Baselines run on the same FFHQ prior at $\sigma_0=\sigma_y/2$ (noise on $[0,1]$,
 doubled to $[-1,1]$): DDRM (separable-SVD, $20$ steps), DDNM (box only, average-pooling range--null
 projection, $100$ steps), and DiffPIR (FFT, both operators, $100$ steps). \textbf{PiGDM}$^{\dagger}$
-(pseudoinverse-guided, $1000$-step DPS sampler, scalar $1/(r_t^2{+}\sigma^2)$ preconditioner).
+(pseudoinverse-guided, $1000$-step DPS sampler, scalar $1/(r_t^2{+}\sigma^2)$ preconditioner) and
+\textbf{DPS} ($1000$-step posterior-gradient, scale $0.3$) close the sampler set.
 $^{\dagger}$Guidance temperature tuned \emph{per cell}
 (softer at higher noise; stronger on box, where its $\A\A^{\!\top}\!\approx\!\I$ approximation is
 closer to true). Bold = best per block; PiGDM trails on distortion but takes the best LPIPS in three
-of four cells.}
+of four cells, while DPS---posterior-gradient without a range/null split---is dominated on this
+aggressive $\times4$ operator (below even bicubic).}
 \label{tab:sr}
 \begin{tabular}{lllccc}
 \toprule
 Operator & $\sigma_y$ & Method & PSNR & SSIM & LPIPS \\
 \midrule
-\multirow{10}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
- & \multirow{5}{*}{0.01} & Observation (bicubic) & 23.58\pmstd{1.83} & 0.676 & 0.531 \\
+\multirow{12}{*}{\shortstack[l]{Anti-alias\\$+$ avg-pool}}
+ & \multirow{6}{*}{0.01} & Observation (bicubic) & 23.58\pmstd{1.83} & 0.676 & 0.531 \\
  & & SMDC + IHDM ($\gamma{=}0.5$) & \textbf{27.35}\pmstd{2.40} & \textbf{0.776} & 0.343 \\
  & & DDRM & 26.77\pmstd{2.27} & 0.764 & 0.230 \\
  & & DiffPIR & 26.21\pmstd{2.15} & 0.727 & \textbf{0.159} \\
  & & PiGDM$^{\dagger}$ & 25.53\pmstd{2.11} & 0.709 & 0.163 \\
+ & & DPS & 22.63\pmstd{1.86} & 0.626 & 0.213 \\
 \cmidrule{2-6}
- & \multirow{5}{*}{0.05} & Observation (bicubic) & 23.14\pmstd{1.66} & 0.605 & 0.657 \\
+ & \multirow{6}{*}{0.05} & Observation (bicubic) & 23.14\pmstd{1.66} & 0.605 & 0.657 \\
  & & SMDC + IHDM ($\gamma{=}0$) & 25.44\pmstd{2.21} & 0.724 & 0.400 \\
  & & DDRM & \textbf{25.64}\pmstd{2.04} & \textbf{0.732} & 0.250 \\
  & & DiffPIR & 24.69\pmstd{1.91} & 0.681 & 0.189 \\
  & & PiGDM$^{\dagger}$ & 24.25\pmstd{1.90} & 0.672 & \textbf{0.184} \\
+ & & DPS & 22.22\pmstd{1.73} & 0.613 & 0.223 \\
 \midrule
-\multirow{12}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
- & \multirow{6}{*}{0.01} & Observation (bicubic) & 27.34\pmstd{2.33} & 0.793 & 0.353 \\
+\multirow{14}{*}{\shortstack[l]{Pure downsample\\(box avg-pool)}}
+ & \multirow{7}{*}{0.01} & Observation (bicubic) & 27.34\pmstd{2.33} & 0.793 & 0.353 \\
  & & SMDC + IHDM ($\gamma{=}0$) & \textbf{28.78}\pmstd{2.72} & \textbf{0.829} & 0.250 \\
  & & DDRM (\texttt{sr4}) & 27.98\pmstd{2.47} & 0.804 & 0.183 \\
  & & DDNM & 28.57\pmstd{2.66} & 0.823 & 0.163 \\
  & & DiffPIR & 27.64\pmstd{2.43} & 0.785 & 0.109 \\
  & & PiGDM$^{\dagger}$ & 27.81\pmstd{2.62} & 0.801 & \textbf{0.092} \\
+ & & DPS & 24.47\pmstd{2.14} & 0.688 & 0.194 \\
 \cmidrule{2-6}
- & \multirow{6}{*}{0.05} & Observation (bicubic) & 26.34\pmstd{1.89} & 0.714 & 0.501 \\
+ & \multirow{7}{*}{0.05} & Observation (bicubic) & 26.34\pmstd{1.89} & 0.714 & 0.501 \\
  & & SMDC + IHDM ($\gamma{=}4$) & 27.92\pmstd{2.35} & 0.798 & 0.312 \\
  & & DDRM (\texttt{sr4}) & 27.51\pmstd{2.31} & 0.788 & 0.202 \\
  & & DDNM & \textbf{27.95}\pmstd{2.41} & \textbf{0.801} & 0.187 \\
  & & DiffPIR & 26.93\pmstd{2.16} & 0.752 & 0.141 \\
  & & PiGDM$^{\dagger}$ & 27.10\pmstd{2.25} & 0.771 & \textbf{0.136} \\
+ & & DPS & 24.09\pmstd{1.93} & 0.675 & 0.205 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1003,8 +1029,12 @@ resampling passes $U$
 The outcome (Table~\ref{tab:inpaint}) is sharply regime-dependent. On \emph{random} masks the method is
 strong and robust across densities: at $50\%$ missing it reaches $29.9$\,dB hole-PSNR / LPIPS $0.030$
 with \emph{zero} failures over $50$ images, and still recovers $28.7$\,dB at $70\%$ missing. On an
-identical fixed $50\%$ mask it \emph{beats} DDRM on every metric (hole-PSNR $29.97$ vs.\ $27.70$, SSIM
-$0.941$ vs.\ $0.871$, LPIPS $0.029$ vs.\ $0.084$). The limitation is equally clear and instructive: a
+identical fixed $50\%$ mask, IHDM sits in the top cluster alongside DDNM, DiffPIR and $\Pi$GDM (all
+$\sim$33/30\,dB full/hole, hole-PSNR $29.9$--$30.0$), leading SSIM ($0.941$); the SVD baseline DDRM and
+the pure-guidance DPS trail by $\sim$2.4\,dB (hole $27.7$/$27.5$). So on scattered masks the strong
+methods are hard to separate, and the honest claim is parity at the top rather than a win---the
+learned prior's real edge shows on the ill-conditioned deblur operators, not on this well-conditioned
+projection. The limitation is equally clear and instructive: a
 large \emph{contiguous} hole (a centered $37.5\%$ box) fails ($10.7$\,dB), because no observed pixel
 lies near the hole interior for the re-blur to reach, and a heat-dissipation prior \emph{deblurs}
 rather than \emph{synthesizes}. Inpainting thus succeeds precisely where the mask is scattered enough
@@ -1016,8 +1046,12 @@ prior and is left to future work. The price is the resampling: $U{=}5\times$ the
 \caption{Inpainting, held-out CelebA-HQ-256. IHDM$+$re-blur companion with $U{=}5$ resampling passes
 per level. \emph{full} = whole-image PSNR (observed pixels pinned), \emph{hole} = missing-region-only
 PSNR. Top: per-image random masks and a contiguous box, $n{=}50$ (PSNR mean$\pm$std). Bottom:
-head-to-head on one \emph{shared} fixed $50\%$ mask, $n{=}16$, vs.\ DDRM (\texttt{deg=inp}, $20$ steps).
-Random masks recover cleanly (zero failures); the contiguous box is the failure case.}
+head-to-head of \emph{all} methods on one \emph{shared} fixed $50\%$ mask, $n{=}16$, each scored on the
+composite (observed pixels pinned): DDRM (\texttt{deg=inp}, $20$ steps), DDNM (\texttt{inpainting}),
+DiffPIR ($100$ steps), $\Pi$GDM (scale $0.02$) and DPS ($1000$ steps). Bold = best per column.
+DDNM, IHDM, DiffPIR and $\Pi$GDM cluster at the top ($\sim$33/30\,dB full/hole); DDRM and DPS---which
+lack a scale-matched hole model---trail by $\sim$2.4\,dB. Random masks recover cleanly (zero
+failures); the contiguous box is the failure case.}
 \label{tab:inpaint}
 \begin{tabular}{llcccc}
 \toprule
@@ -1028,9 +1062,13 @@ random, keep $50\%$ & IHDM & $32.87$\pmstd{3.83} & $29.86$\pmstd{3.83} & $0.940$
 random, keep $30\%$ & IHDM & $30.20$\pmstd{3.62} & $28.65$\pmstd{3.62} & $0.898$ & $0.072$ \\
 box $37.5\%$ (contig.) & IHDM & $19.25$\pmstd{2.77} & $10.73$\pmstd{2.77} & $0.897$ & $0.118$ \\
 \midrule
-\multirow{2}{*}{fixed $50\%$}
- & \textbf{IHDM} & \textbf{32.96} & \textbf{29.97} & \textbf{0.941} & \textbf{0.029} \\
- & DDRM & $29.72$ & $27.70$ & $0.871$ & $0.084$ \\
+\multirow{6}{*}{fixed $50\%$}
+ & IHDM    & $32.96$ & $29.93$ & $\mathbf{0.941}$ & $0.028$ \\
+ & DDNM    & $\mathbf{33.03}$ & $\mathbf{30.00}$ & $0.937$ & $0.032$ \\
+ & DiffPIR & $32.96$ & $29.94$ & $0.933$ & $\mathbf{0.024}$ \\
+ & PiGDM   & $32.29$ & $29.26$ & $0.930$ & $0.026$ \\
+ & DDRM    & $30.75$ & $27.72$ & $0.903$ & $0.066$ \\
+ & DPS     & $30.57$ & $27.54$ & $0.895$ & $0.066$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1040,8 +1078,9 @@ box $37.5\%$ (contig.) & IHDM & $19.25$\pmstd{2.77} & $10.73$\pmstd{2.77} & $0.8
 \figimg{figures/figure_inpaint.png}
 \caption{Inpainting on a fixed $50\%$-keep random mask, held-out CelebA-HQ-256: clean, masked input,
 SMDC$+$IHDM (re-blur companion with $U{=}5$ resampling), and DDRM on the \emph{same} mask.
-SMDC$+$IHDM recovers the missing region more faithfully (missing-region PSNR $29.97$ vs $27.70$\,dB;
-Table~\ref{tab:inpaint}).}
+Here SMDC$+$IHDM recovers the missing region more faithfully than the SVD baseline DDRM
+(missing-region PSNR $29.93$ vs $27.72$\,dB), though DDNM/DiffPIR/$\Pi$GDM match IHDM at the top on
+this well-conditioned projection (Table~\ref{tab:inpaint}).}
 \label{fig:inpaint}
 \end{figure}
 
@@ -1132,5 +1171,66 @@ over a well-tuned classical prox is real but modest. (ii) \textbf{DPS} is the mo
 the operator structure is unknown or perceptual LPIPS is the target, since it never diagonalizes
 $\A$ and needs only $\A,\A^\top$. The learned diffusion prior wins where its structural assumptions
 hold; TV and DPS are the baselines to beat elsewhere.
+
+\appendix
+\section{Boundary conventions of the baselines}
+\label{app:boundary}
+
+The methods compared in the main tables do not all assume the same boundary condition in their
+forward operator. We record the conventions here for full disclosure. The comparison remains fair
+because each method is \emph{internally self-consistent}: SMDC restores the realistic
+reflect-boundary observation in \texttt{results/<op>/observation}, while each learned baseline
+\emph{re-generates} its own observation from the \emph{same} held-out ground truth under its own
+forward model, and every metric is computed against that common ground truth. At $256^2$ the
+differences touch only a few border pixels and are second-order, but they explain small cross-method
+gaps near image edges (e.g.\ the ``boundary ring'' DiffPIR's circular forward inherits on the reflect-synthesized
+motion/defocus data).
+
+\begin{table}[h]
+\centering
+\caption{Boundary / grid convention each method's forward operator uses, per operator.
+\textbf{R} = reflect (half-sample-symmetric / Neumann); \textbf{C} = circular (periodic, FFT/OTF);
+\textbf{Z} = zero-padding (Dirichlet); \textbf{BA} = exact block-averaging (no boundary effect);
+\textbf{D} = diagonal mask (pointwise; no boundary). ``sep'' = precomputed separable SVD.
+A dash marks operators the method does not admit (no tractable SVD) or that are not tabulated.}
+\label{tab:boundary}
+\begin{tabular}{lccccc}
+\toprule
+Method & Gaussian & Motion & Defocus & Super-res & Inpainting \\
+\midrule
+SMDC (ours)   & R (DCT-II) & R (spatial CG)   & R (DCT-II)       & avg-pool grid & R (re-blur) \\
+DPS           & R (DCT)    & R (reflect conv) & R (reflect conv) & --            & -- \\
+$\Pi$GDM      & R (DCT)    & R (reflect conv) & R (reflect conv) & avg-pool grid & -- \\
+DDRM          & Z          & --             & --         & BA / sep      & D \\
+DDNM          & Z\,$^\dagger$ & --          & --         & BA (box)      & D \\
+DiffPIR       & C (wrap)   & C              & C          & C ($st{=}0$ grid) & C \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Per-method details.}
+\textbf{SMDC (ours)} uses a half-sample-symmetric \emph{reflect} (Neumann) boundary throughout:
+Gaussian and defocus are DCT-II diagonal so the closed-form Wiener step is exact, and motion uses the
+true reflect convolution matrix (block Toeplitz-plus-Hankel) solved by spatial CG, which avoids the
+periodic wrap and its border ring. \textbf{$\Pi$GDM} runs through the \emph{same} sampler and
+measurement operators as DPS, differing only in the guidance rule (pseudoinverse- vs.\
+posterior-gradient); it therefore shares DPS's boundary convention exactly---DCT/reflect Gaussian,
+the same reflect-boundary convolution for motion/defocus, our avg-pool grid on SR. \textbf{DPS}
+applies the Gaussian/heat operator in the DCT domain ($\mathrm{idct2}(\mathrm{dct2}(x)\cdot\hat k)$,
+reflect) and motion/defocus via the \emph{same} reflect-boundary convolution as SMDC---a
+differentiable forward whose adjoint comes from autograd. Because DPS and $\Pi$GDM need only
+$\A,\A^\top$, matching the reflect operator to the observation is exact and costs nothing (no SVD),
+so the sampler baselines carry \emph{no} boundary ring; only DiffPIR, whose FFT solver is inherently
+circular, does.
+\textbf{DDRM} and \textbf{DDNM} build the separable deblur operator as an explicit $1$-D convolution
+matrix that \emph{drops out-of-range taps} (zero-padding / Dirichlet); super-resolution is exact
+block-averaging (no boundary effect) and inpainting is a diagonal mask. Both require a tractable SVD,
+so they apply only to separable operators (hence the dashes on motion/defocus, and on the anti-alias
+SR for DDNM, whose avg-pool SVD admits no composable pre-blur). \textbf{DiffPIR} uses circular
+(periodic) convolution everywhere---\texttt{ndimage.convolve} in \texttt{wrap} mode for synthesis and
+an FFT data step---and its super-resolution samples on the native $st{=}0$ grid, a
+one-pixel offset from the half-sample avg-pool grid used by SMDC/DDRM/DDNM.
+$^\dagger$DDNM's Gaussian SVD is well defined but numerically unstable for our strong $\sigma{=}4$
+kernel (singulars $\!\sim\!10^{-30}$ enter its noisy update), so that cell is omitted.
 
 \end{document}

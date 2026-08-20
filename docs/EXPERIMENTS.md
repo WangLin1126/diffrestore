@@ -78,6 +78,51 @@ perception (generative prior). Confounds: DPS prior larger; SMDC FFHQ prior is c
 
 ## 9. Chronological log (newest first)
 
+- **2026-08-20 — DPS added to SR table + inpainting baselines (completes the CelebA method matrix).**
+  - **DPS-SR** (4 cells, n=200): added `--abs_noise` to `sr.py demo` so DPS's obs matches the SMDC row
+    (validated 28.54 vs freqreg 28.59); generated matched obs (no-CG), ran DPS via `sr.py baselines
+    --methods dps` (scale 0.3). Results (P/S/L): box 24.47/.688/.194, 24.09/.675/.205; aa 22.63/.626/.213,
+    22.22/.613/.223 — **dominated everywhere** (below bicubic; DPS's posterior-gradient without a
+    range/null split struggles on aggressive x4). Added to `tab:sr` + caption.
+  - **Inpainting head-to-head** (fixed 50% mask, n=16, composite scoring = observed pinned): minted one
+    shared mask (`results/inpaint_mask50.pt` + ddrm `.npy` + ddnm `.npy` + diffpir mask.png), ran ALL 6
+    on it. IHDM reproduces the old table (32.96) → mask equivalent. Wiring per backbone: DPS/PiGDM via new
+    `InpaintOperatorDPS` + `--operator inpaint --mask_file`; DDRM `DDRM_MASK_NPY`; DDNM `--deg inpainting
+    --simplified` (exp/inp_masks/mask.npy); DiffPIR `main_ddpir_inpainting` env overrides + `load_mask`.
+    **Results (full/hole/SSIM/LPIPS):** DDNM **33.03/30.00**/.937/.032, IHDM 32.96/29.93/**.941**/.028,
+    DiffPIR 32.96/29.94/.933/**.024**, PiGDM 32.29/29.26/.930/.026, DDRM 30.75/27.72/.903/.066, DPS
+    30.57/27.54/.895/.066. **Honest reframe:** top cluster (IHDM/DDNM/DiffPIR/PiGDM ~33/30) — parity, not
+    a win; DDRM/DPS trail ~2.4 dB. Table+caption+prose updated (was "IHDM beats DDRM").
+  - **Gotchas:** PiGDM inpaint collapsed at scale 1.0 (18 dB) like motion → re-tuned to **scale 0.02,
+    sig 0.5** (32.29). DDNM inpaint recon index is **+1 offset** from orig (time-travel naming) — score
+    recon `i` vs `orig_{i+1}`. Report 23 pp, 0 undefined. [[experiments-framework]] [[smdc-project]]
+
+
+- **2026-08-19 — ΠGDM added (9 deblur cells) + DPS/ΠGDM motion/defocus re-run under a reflect operator;
+  DDNM-Gaussian marked; boundary appendix.** Completes the A1-3 method matrix (DPS·ΠGDM·DDRM·DDNM·DiffPIR).
+  - **Feasibility** (report App.~A, `tab:boundary`): SVD-free methods (DPS, ΠGDM, DiffPIR) run on every
+    operator; DDRM/DDNM need a tractable SVD → separable-only (no motion/defocus; DDNM also no aa-SR).
+  - **ΠGDM**: implemented via the DPS backbone's `pigdm` conditioning (`get_conditioning_method`, needs
+    only `A`,`Aᵀ` via autograd) through `run_dps.py` (added `--method pigdm --pigdm_sigma`). n=100 (1000-NFE
+    sampler, like DPS). **Operating point is delicate**: SR's scale=1.0 *diverges* on deblur (full-size
+    residual over-guides → 7 dB noise). gaussian/defocus (DCT-diagonal, AAᵀ≈I holds) stable at **scale=0.1**,
+    σ noise-scaled 0.3/0.4/0.5. **Motion (deep notches) needed re-tuning**: 0.1/noise-σ collapsed at high
+    noise (s20→17.05, std 0.6 = uniform garbage; isolated to ΠGDM since DPS-reflect on the *same* operator
+    was healthy) → **scale=0.02, σ=1.0** (very gentle + high temp damps null-space amplification): s20
+    recovers to 25.37. ΠGDM final (P/S/L): gaussian 25.67/.708/.160·24.98/.665/.209·23.42/.575/.338;
+    motion 25.70/.728/.188·25.65/.720/.187·25.37/.703/.184 (noise-robust!); defocus 26.56/.725/.158·
+    25.23/.653/.221·22.91/.520/.385.
+  - **Reflect operator for DPS & ΠGDM motion/defocus (replaces circular).** Added `ReflectBlurOperatorDPS`
+    (wraps `ops.motion_spatial.SpatialMotionBlur` = the exact reflect conv that made the obs and that SMDC-CG
+    uses; adjoint exact 2e-5) + `--boundary reflect` to `run_dps.py`. Matching the obs boundary **helps a lot**
+    (the circular residual miscalibrates guidance globally, not just at the edge): **DPS-reflect** motion
+    25.83/25.08/24.10 (was 24.90/24.49/23.74) and defocus 24.26/23.72/23.01 (was 23.23/22.98/22.46) — +0.4–1.0 dB
+    + better SSIM/LPIPS. Saved to `dps_reflect/` (circular `dps/` preserved). MC computed vs the reflect
+    operator (≈noise level). Appendix flipped: DPS/ΠGDM now **all-reflect** for deblur (no boundary ring;
+    only DiffPIR stays circular).
+  - **DDNM-Gaussian failure marked** in `tab:gauss` (`-- (SVD unstable: NaN, σ=4 singulars ~1e-30)`; DDRM
+    covers the slot). Report recompiled 22 pp, 0 undefined; aux cleaned. [[experiments-framework]] [[smdc-project]]
+
 - **2026-08-08 — Modern baselines DiffPIR + DDNM (A1-3), shared `ffhq_10m` prior, our metrics.** Both
   reuse our `ffhq_10m.pt`: DiffPIR loads it directly (`diffusion_ffhq_10m`); DDNM via a new `openai`-type
   config `configs/ffhq_gd.yml` (canonical `celeba_hq.ckpt` URL is dead/403), loading 0 missing keys — so
